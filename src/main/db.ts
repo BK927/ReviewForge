@@ -97,8 +97,21 @@ export interface ReviewFilter {
   received_for_free?: number
 }
 
-export function createDb(dbPath: string): Database.Database {
-  const db = new Database(dbPath)
+export interface GameStats {
+  total_collected: number
+  positive_count: number
+  negative_count: number
+  positive_rate: number
+  languages: string[]
+}
+
+export function createDb(dbPath?: string): Database.Database {
+  let resolvedPath = dbPath
+  if (!resolvedPath) {
+    const { app } = require('electron')
+    resolvedPath = require('path').join(app.getPath('userData'), 'reviewforge.db')
+  }
+  const db = new Database(resolvedPath)
   db.pragma('journal_mode = WAL')
   db.exec(SCHEMA)
   return db
@@ -150,11 +163,11 @@ export function getReviews(db: Database.Database, appId: number, filter?: Review
     sql += ' AND language = ?'
     params.push(filter.language)
   }
-  if (filter?.period_start) {
+  if (filter?.period_start !== undefined) {
     sql += ' AND timestamp_created >= ?'
     params.push(filter.period_start)
   }
-  if (filter?.period_end) {
+  if (filter?.period_end !== undefined) {
     sql += ' AND timestamp_created <= ?'
     params.push(filter.period_end)
   }
@@ -179,7 +192,7 @@ export function getReviews(db: Database.Database, appId: number, filter?: Review
   return db.prepare(sql).all(...params) as ReviewRecord[]
 }
 
-export function getGameStats(db: Database.Database, appId: number) {
+export function getGameStats(db: Database.Database, appId: number): GameStats {
   const total = db.prepare('SELECT COUNT(*) as count FROM reviews WHERE app_id = ?').get(appId) as { count: number }
   const positive = db.prepare('SELECT COUNT(*) as count FROM reviews WHERE app_id = ? AND voted_up = 1').get(appId) as { count: number }
   const languages = db.prepare('SELECT DISTINCT language FROM reviews WHERE app_id = ?').all(appId) as { language: string }[]
@@ -194,10 +207,12 @@ export function getGameStats(db: Database.Database, appId: number) {
 }
 
 export function deleteGame(db: Database.Database, appId: number): void {
-  db.prepare('DELETE FROM analysis_cache WHERE app_id = ?').run(appId)
-  db.prepare('DELETE FROM embeddings WHERE recommendation_id IN (SELECT recommendation_id FROM reviews WHERE app_id = ?)').run(appId)
-  db.prepare('DELETE FROM reviews WHERE app_id = ?').run(appId)
-  db.prepare('DELETE FROM games WHERE app_id = ?').run(appId)
+  db.transaction(() => {
+    db.prepare('DELETE FROM analysis_cache WHERE app_id = ?').run(appId)
+    db.prepare('DELETE FROM embeddings WHERE recommendation_id IN (SELECT recommendation_id FROM reviews WHERE app_id = ?)').run(appId)
+    db.prepare('DELETE FROM reviews WHERE app_id = ?').run(appId)
+    db.prepare('DELETE FROM games WHERE app_id = ?').run(appId)
+  })()
 }
 
 export function saveAnalysisCache(db: Database.Database, appId: number, analysisType: string, languageFilter: string, configHash: string, resultJson: string): void {
