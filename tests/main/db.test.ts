@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
-import { createDb, insertGame, getGame, upsertReviews, getReviews, getGameStats } from '../../src/main/db'
+import { createDb, insertGame, getGame, getAllGames, upsertReviews, getReviews, getGameStats, deleteGame, saveAnalysisCache, getAnalysisCache } from '../../src/main/db'
 import fs from 'fs'
 import path from 'path'
 
@@ -84,5 +84,36 @@ describe('Database', () => {
     expect(stats.total_collected).toBe(3)
     expect(stats.positive_rate).toBeCloseTo(0.6667, 2)
     expect(stats.languages).toEqual(expect.arrayContaining(['english', 'koreana']))
+  })
+
+  it('getAllGames returns all games ordered by last_fetched_at', () => {
+    insertGame(db, { app_id: 730, app_name: 'CS2', review_score: 8, review_score_desc: 'Very Positive', total_positive: 100, total_negative: 20, total_reviews: 120 })
+    insertGame(db, { app_id: 292030, app_name: 'Witcher 3', review_score: 9, review_score_desc: 'Overwhelmingly Positive', total_positive: 800, total_negative: 50, total_reviews: 850 })
+    const games = getAllGames(db)
+    expect(games).toHaveLength(2)
+    expect(games.map(g => g.app_id)).toContain(730)
+    expect(games.map(g => g.app_id)).toContain(292030)
+  })
+
+  it('deleteGame removes game and all related data', () => {
+    insertGame(db, { app_id: 730, app_name: 'CS2', review_score: 8, review_score_desc: 'Very Positive', total_positive: 100, total_negative: 20, total_reviews: 120 })
+    upsertReviews(db, [
+      { recommendation_id: 'r1', app_id: 730, language: 'english', review_text: 'Good', voted_up: 1, timestamp_created: 1000, timestamp_updated: 1000, playtime_at_review: 600, playtime_forever: 1200, steam_purchase: 1, received_for_free: 0, written_during_early_access: 0, primarily_steam_deck: 0, votes_up: 10, votes_funny: 0, weighted_vote_score: 0.5, comment_count: 0 }
+    ])
+    deleteGame(db, 730)
+    expect(getGame(db, 730)).toBeNull()
+    expect(getReviews(db, 730)).toHaveLength(0)
+  })
+
+  it('saves and retrieves analysis cache', () => {
+    insertGame(db, { app_id: 730, app_name: 'CS2', review_score: 8, review_score_desc: 'Very Positive', total_positive: 100, total_negative: 20, total_reviews: 120 })
+    const result = JSON.stringify({ topics: ['lag', 'server'] })
+    saveAnalysisCache(db, 730, 'topics', 'english', 'hash-abc', result)
+    const cached = getAnalysisCache(db, 730, 'topics', 'hash-abc')
+    expect(cached).toBe(result)
+  })
+
+  it('getAnalysisCache returns null for missing cache', () => {
+    expect(getAnalysisCache(db, 730, 'topics', 'nonexistent-hash')).toBeNull()
   })
 })
