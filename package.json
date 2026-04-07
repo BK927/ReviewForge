@@ -32,6 +32,20 @@
     "react-dom": "^18.3.1",
     "uuid": "^13.0.0"
   },
+  "build": {
+    "appId": "com.reviewforge.app",
+    "productName": "ReviewForge",
+    "win": {
+      "target": "nsis"
+    },
+    "extraResources": [
+      {
+        "from": "python",
+        "to": "python",
+        "filter": ["**/*", "!.venv/**", "!__pycache__/**", "!*.pyc"]
+      }
+    ]
+  },
   "devDependencies": {
     "@electron-toolkit/eslint-config": "^1.0.2",
     "@electron-toolkit/eslint-config-ts": "^1.0.1",
