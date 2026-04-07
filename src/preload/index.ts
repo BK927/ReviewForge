@@ -1,22 +1,36 @@
-import { contextBridge } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
+import { contextBridge, ipcRenderer } from 'electron'
 
-// Custom APIs for renderer
-const api = {}
+const api = {
+  // Games
+  addGame: (input: string) => ipcRenderer.invoke('game:add', input),
+  getGames: () => ipcRenderer.invoke('game:list'),
+  getGame: (appId: number) => ipcRenderer.invoke('game:get', appId),
+  deleteGame: (appId: number) => ipcRenderer.invoke('game:delete', appId),
+  getGameStats: (appId: number) => ipcRenderer.invoke('game:stats', appId),
 
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('api', api)
-  } catch (error) {
-    console.error(error)
-  }
-} else {
-  // @ts-ignore (define in dts)
-  window.electron = electronAPI
-  // @ts-ignore (define in dts)
-  window.api = api
+  // Reviews
+  fetchReviews: (appId: number) => ipcRenderer.invoke('reviews:fetch', appId),
+  getReviews: (appId: number, filter?: Record<string, unknown>) => ipcRenderer.invoke('reviews:get', appId, filter),
+
+  // Analysis
+  detectGpu: () => ipcRenderer.invoke('analysis:detect-gpu'),
+  runAnalysis: (appId: number, config: Record<string, unknown>) => ipcRenderer.invoke('analysis:run', appId, config),
+
+  // Export
+  exportCsv: (appId: number, filter: Record<string, unknown>) => ipcRenderer.invoke('export:csv', appId, filter),
+  exportMarkdown: (appId: number, filter: Record<string, unknown>) => ipcRenderer.invoke('export:markdown', appId, filter),
+
+  // Events
+  onProgress: (callback: (data: unknown) => void) => {
+    ipcRenderer.on('progress', (_event, data) => callback(data))
+    return () => ipcRenderer.removeAllListeners('progress')
+  },
+
+  // Settings
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  saveSettings: (settings: Record<string, unknown>) => ipcRenderer.invoke('settings:save', settings)
 }
+
+contextBridge.exposeInMainWorld('api', api)
+
+export type ElectronAPI = typeof api
