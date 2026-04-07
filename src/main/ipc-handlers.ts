@@ -1,9 +1,10 @@
-import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { ipcMain, BrowserWindow, dialog, app } from 'electron'
 import Database from 'better-sqlite3'
 import { insertGame, getGame, getAllGames, deleteGame, getGameStats, upsertReviews, getReviews } from './db'
 import { parseAppId, fetchAllReviews, fetchGameName, transformQuerySummary } from './steam-api'
 import { SidecarManager } from './sidecar'
 import fs from 'fs'
+import path from 'path'
 
 export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManager, getMainWindow: () => BrowserWindow | null): void {
 
@@ -108,12 +109,18 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
     return result.filePath
   })
 
+  const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+
   ipcMain.handle('settings:get', () => {
-    return { tier: 0, language: 'all', filterOfftopic: true }
+    try {
+      return JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+    } catch {
+      return { tier: 'auto', apiProvider: 'none', apiKey: '' }
+    }
   })
 
-  ipcMain.handle('settings:save', (_event, _settings: Record<string, unknown>) => {
-    // Settings persistence can be added later
+  ipcMain.handle('settings:save', (_event, settings: Record<string, unknown>) => {
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8')
     return true
   })
 }

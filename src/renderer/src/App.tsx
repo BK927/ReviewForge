@@ -1,19 +1,24 @@
-import { useState } from 'react'
+import { Layout } from './components/Layout'
+import { Dashboard } from './components/Dashboard'
+import { TopicAnalysis } from './components/TopicAnalysis'
+import { SegmentAnalysis } from './components/SegmentAnalysis'
+import { ExportPanel } from './components/ExportPanel'
 
-function App(): JSX.Element {
-  const [count, setCount] = useState(0)
-
+export default function App() {
   return (
-    <div className="App">
-      <h1>ReviewForge</h1>
-      <div className="card">
-        <button onClick={() => setCount((c) => c + 1)}>count is {count}</button>
-        <p>
-          Edit <code>src/renderer/src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-    </div>
+    <Layout>
+      {(appId, activeTab) => {
+        if (!appId) {
+          return <div className="empty-state">Add a game from the sidebar to get started</div>
+        }
+        switch (activeTab) {
+          case 'dashboard': return <Dashboard appId={appId} />
+          case 'topics': return <TopicAnalysis appId={appId} />
+          case 'segments': return <SegmentAnalysis appId={appId} />
+          case 'export': return <ExportPanel appId={appId} />
+          default: return null
+        }
+      }}
+    </Layout>
   )
 }
-
-export default App
