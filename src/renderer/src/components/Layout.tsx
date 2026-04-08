@@ -24,15 +24,14 @@ export function Layout({ children }: Props) {
   const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 })
 
+  // Auto-collapse sidebar only on genuinely narrow windows
   useEffect(() => {
-    const handleResize = () => {
+    const timer = setTimeout(() => {
       if (window.innerWidth < 800) {
         setSidebarCollapsed(true)
       }
-    }
-    handleResize()
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
+    }, 200)
+    return () => clearTimeout(timer)
   }, [])
 
   const handleToggleCompare = (appId: number) => {
