@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { useApi } from '../hooks/useApi'
 import { getLanguageDisplayName } from '../lib/steam-languages'
+import { SegmentsSkeleton } from './Skeleton'
 
 const PLAYTIME_BRACKETS = [
   { label: '0-2h', min: 0, max: 120 },
@@ -18,9 +19,11 @@ export function SegmentAnalysis({ appId }: { appId: number }) {
   const [playtimeFilter, setPlaytimeFilter] = useState('all')
   const [purchaseFilter, setPurchaseFilter] = useState('all')
   const [languages, setLanguages] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const load = async () => {
+      setLoading(true)
       const filter: Record<string, unknown> = {}
       if (langFilter !== 'all') filter.language = langFilter
 
@@ -49,6 +52,7 @@ export function SegmentAnalysis({ appId }: { appId: number }) {
 
       const stats = await api.getGameStats(appId) as { languages: string[] }
       setLanguages(stats.languages)
+      setLoading(false)
     }
     load()
   }, [appId, langFilter, periodFilter, playtimeFilter, purchaseFilter])
@@ -166,20 +170,24 @@ export function SegmentAnalysis({ appId }: { appId: number }) {
         <span className="filter-count">{reviews.length} reviews</span>
       </div>
 
-      <div className="charts-grid">
-        <div className="chart-card">
-          <h3>Positive Rate by Playtime</h3>
-          <ReactECharts option={playtimeOption} style={{ height: 300 }} />
+      {loading ? (
+        <SegmentsSkeleton />
+      ) : (
+        <div className="charts-grid">
+          <div className="chart-card">
+            <h3>Positive Rate by Playtime</h3>
+            <ReactECharts option={playtimeOption} style={{ height: 300 }} />
+          </div>
+          <div className="chart-card">
+            <h3>Positive Rate by Language</h3>
+            <ReactECharts option={langOption} style={{ height: 300 }} />
+          </div>
+          <div className="chart-card">
+            <h3>Purchase Type</h3>
+            <ReactECharts option={purchaseOption} style={{ height: 300 }} />
+          </div>
         </div>
-        <div className="chart-card">
-          <h3>Positive Rate by Language</h3>
-          <ReactECharts option={langOption} style={{ height: 300 }} />
-        </div>
-        <div className="chart-card">
-          <h3>Purchase Type</h3>
-          <ReactECharts option={purchaseOption} style={{ height: 300 }} />
-        </div>
-      </div>
+      )}
     </div>
   )
 }

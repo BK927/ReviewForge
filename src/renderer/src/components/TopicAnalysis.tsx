@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useApi } from '../hooks/useApi'
+import { TopicsSkeleton } from './Skeleton'
 
 interface Topic {
   id: number
@@ -65,6 +66,8 @@ export function TopicAnalysis({ appId }: { appId: number }) {
           {loading ? progress || 'Analyzing...' : 'Run Analysis'}
         </button>
       </div>
+
+      {loading && <TopicsSkeleton />}
 
       {result && (
         <div className="analysis-meta">
