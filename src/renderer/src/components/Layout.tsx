@@ -24,14 +24,18 @@ export function Layout({ children }: Props) {
   const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 })
 
-  // Auto-collapse sidebar only on genuinely narrow windows
+  // Auto-collapse/expand sidebar based on window width
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (window.innerWidth < 800) {
-        setSidebarCollapsed(true)
-      }
-    }, 200)
-    return () => clearTimeout(timer)
+    const handleResize = () => {
+      setSidebarCollapsed(window.innerWidth < 800)
+    }
+    // Delay initial check to let Electron window settle
+    const timer = setTimeout(handleResize, 200)
+    window.addEventListener('resize', handleResize)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('resize', handleResize)
+    }
   }, [])
 
   const handleToggleCompare = (appId: number) => {
