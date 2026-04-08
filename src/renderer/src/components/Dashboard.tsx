@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { useApi } from '../hooks/useApi'
+import { useCountUp } from '../hooks/useCountUp'
 import { CollectionProgress } from './CollectionProgress'
 import { getLanguageDisplayName } from '../lib/steam-languages'
 
@@ -47,6 +48,8 @@ export function Dashboard({ appId }: { appId: number }) {
   // Donut chart: positive/negative
   const donutOption = {
     tooltip: { trigger: 'item' },
+    animationDuration: 400,
+    animationEasing: 'cubicOut',
     series: [{
       type: 'pie',
       radius: ['45%', '70%'],
@@ -80,6 +83,9 @@ export function Dashboard({ appId }: { appId: number }) {
   const sortedKeys = [...trendCounts.keys()].sort()
   const trendOption = {
     tooltip: { trigger: 'axis' },
+    animationDuration: 400,
+    animationEasing: 'cubicOut',
+    animationDelay: (idx: number) => idx * 100,
     xAxis: { type: 'category' as const, data: sortedKeys },
     yAxis: { type: 'value' as const },
     series: [
@@ -96,6 +102,9 @@ export function Dashboard({ appId }: { appId: number }) {
   const langSorted = [...langCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15)
   const langOption = {
     tooltip: { trigger: 'axis' },
+    animationDuration: 400,
+    animationEasing: 'cubicOut',
+    animationDelay: (idx: number) => idx * 100,
     xAxis: { type: 'category' as const, data: langSorted.map(([code]) => getLanguageDisplayName(code)), axisLabel: { rotate: 30 } },
     yAxis: { type: 'value' as const },
     series: [{ type: 'bar', data: langSorted.map(([, count]) => count), color: '#60a5fa' }]
@@ -107,6 +116,11 @@ export function Dashboard({ appId }: { appId: number }) {
   const recent = reviews.filter(r => r.timestamp_created >= thirtyDaysAgo)
   const recentPosRate = recent.length > 0 ? recent.filter(r => r.voted_up).length / recent.length : null
 
+  const animatedCollected = useCountUp(stats.total_collected)
+  const animatedPositiveRate = useCountUp(Math.round(stats.positive_rate * 1000))
+  const recentPosRateRaw = recentPosRate !== null ? Math.round(recentPosRate * 1000) : 0
+  const animatedRecentRate = useCountUp(recentPosRateRaw)
+
   return (
     <div className="dashboard">
       <div className="game-info-card">
@@ -114,10 +128,10 @@ export function Dashboard({ appId }: { appId: number }) {
         <div className="score-badge">{game.review_score_desc}</div>
         <div className="stats-row">
           <span>Total on Steam: {game.total_reviews.toLocaleString()}</span>
-          <span>Collected: {stats.total_collected.toLocaleString()}</span>
-          <span>All-time positive: {(stats.positive_rate * 100).toFixed(1)}%</span>
+          <span>Collected: {animatedCollected.toLocaleString()}</span>
+          <span>All-time positive: {(animatedPositiveRate / 10).toFixed(1)}%</span>
           {recentPosRate !== null && (
-            <span>Last 30d positive: {(recentPosRate * 100).toFixed(1)}%</span>
+            <span>Last 30d positive: {(animatedRecentRate / 10).toFixed(1)}%</span>
           )}
         </div>
       </div>
