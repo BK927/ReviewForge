@@ -71,6 +71,8 @@ export function SegmentAnalysis({ appId }: { appId: number }) {
       trigger: 'axis',
       formatter: (p: any) => `${p[0].name}<br/>Positive: ${(p[0].value * 100).toFixed(1)}%<br/>Reviews: ${playtimeData[p[0].dataIndex].total}`
     },
+    animationDuration: 400,
+    animationEasing: 'cubicOut' as const,
     xAxis: { type: 'category' as const, data: playtimeData.map(d => d.label) },
     yAxis: { type: 'value' as const, max: 1, axisLabel: { formatter: (v: number) => `${(v * 100).toFixed(0)}%` } },
     series: [{ type: 'bar', data: playtimeData.map(d => d.positive_rate), color: '#60a5fa' }]
@@ -91,6 +93,9 @@ export function SegmentAnalysis({ appId }: { appId: number }) {
 
   const langOption = {
     tooltip: { trigger: 'axis' },
+    animationDuration: 400,
+    animationEasing: 'cubicOut' as const,
+    animationDelay: (idx: number) => idx * 100,
     xAxis: { type: 'category' as const, data: langData.map(d => d.name), axisLabel: { rotate: 45 } },
     yAxis: { type: 'value' as const, max: 1, axisLabel: { formatter: (v: number) => `${(v * 100).toFixed(0)}%` } },
     series: [{
@@ -112,6 +117,8 @@ export function SegmentAnalysis({ appId }: { appId: number }) {
 
   const purchaseOption = {
     tooltip: { trigger: 'axis' },
+    animationDuration: 400,
+    animationEasing: 'cubicOut' as const,
     xAxis: { type: 'category' as const, data: purchaseData.map(d => d.name) },
     yAxis: { type: 'value' as const, max: 1, axisLabel: { formatter: (v: number) => `${(v * 100).toFixed(0)}%` } },
     series: [{ type: 'bar', data: purchaseData.map(d => d.rate), color: '#a78bfa' }]
