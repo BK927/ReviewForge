@@ -606,3 +606,26 @@ body {
   border-color: #6d28d9;
   color: white;
 }
+
+/* ── Responsive ── */
+@media (max-width: 800px) {
+  :root {
+    --content-padding: 8px;
+    --grid-gap: 8px;
+  }
+
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .topics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 1201px) {
+  :root {
+    --content-padding: 16px;
+    --grid-gap: 16px;
+  }
+}
