@@ -4,6 +4,7 @@ import { useApi } from '../hooks/useApi'
 import { useCountUp } from '../hooks/useCountUp'
 import { CollectionProgress } from './CollectionProgress'
 import { getLanguageDisplayName } from '../lib/steam-languages'
+import { DashboardSkeleton } from './Skeleton'
 
 interface GameStats {
   total_collected: number
@@ -43,7 +44,7 @@ export function Dashboard({ appId }: { appId: number }) {
 
   useEffect(() => { loadData() }, [appId])
 
-  if (!game || !stats) return <div className="loading">Loading...</div>
+  if (!game || !stats) return <DashboardSkeleton />
 
   // Donut chart: positive/negative
   const donutOption = {
