@@ -77,7 +77,7 @@ ReviewForge/
 
 ```bash
 cd C:/Users/BK927/repo/ReviewForge
-npm create @electron-vite/create@latest . -- --template react-ts
+pnpm create @electron-vite/create@latest . -- --template react-ts
 ```
 
 Select React + TypeScript template. If the directory is not empty, move `docs/` aside first, scaffold, then move `docs/` back.
@@ -85,14 +85,14 @@ Select React + TypeScript template. If the directory is not empty, move `docs/` 
 - [ ] **Step 2: Install core dependencies**
 
 ```bash
-npm install better-sqlite3 echarts echarts-for-react papaparse uuid
-npm install -D @types/better-sqlite3 @types/papaparse @types/uuid
+pnpm add better-sqlite3 echarts echarts-for-react papaparse uuid
+pnpm add -D @types/better-sqlite3 @types/papaparse @types/uuid
 ```
 
 - [ ] **Step 3: Verify dev server starts**
 
 ```bash
-npm run dev
+pnpmdev
 ```
 
 Expected: Electron window opens with default React template.
@@ -116,7 +116,7 @@ huggingface-hub>=0.24.0
 ```
 
 ```bash
-cd python && python -m venv venv && venv/Scripts/activate && pip install -r requirements.txt
+cd python && uv venv && uv pip install -r requirements.txt
 ```
 
 - [ ] **Step 5: Commit**
@@ -2033,7 +2033,7 @@ export function ExportPanel({ appId }: { appId: number }) {
 - [ ] **Step 6: Run dev server and verify layout renders**
 
 ```bash
-npm run dev
+pnpmdev
 ```
 
 Expected: Electron window opens with sidebar (game input + empty game list) and tab navigation. No errors in console.
@@ -2239,7 +2239,7 @@ export function Dashboard({ appId }: { appId: number }) {
 - [ ] **Step 3: Run dev server and verify Dashboard renders**
 
 ```bash
-npm run dev
+pnpmdev
 ```
 
 Expected: After adding a game and fetching reviews, Dashboard shows game info card, donut chart, trend chart, and language bar chart.
@@ -2395,7 +2395,7 @@ function TopicCard({ topic, type, expanded, onToggle }: {
 - [ ] **Step 2: Run dev server and verify**
 
 ```bash
-npm run dev
+pnpmdev
 ```
 
 Expected: Topics tab shows controls and runs analysis when clicked. Results display as positive/negative topic cards with keywords and expandable sample reviews.
@@ -2573,7 +2573,7 @@ export function SegmentAnalysis({ appId }: { appId: number }) {
 - [ ] **Step 2: Run dev and verify**
 
 ```bash
-npm run dev
+pnpmdev
 ```
 
 Expected: Segments tab shows playtime bracket chart, language positive rate chart, and purchase type comparison. Language filter dropdown works.
@@ -2760,7 +2760,7 @@ export function ExportPanel({ appId }: { appId: number }) {
 - [ ] **Step 3: Run dev and verify**
 
 ```bash
-npm run dev
+pnpmdev
 ```
 
 Expected: Export tab shows filter controls, file export buttons (CSV/Markdown), clipboard copy buttons, and editable LLM prompt template.
@@ -2996,7 +2996,7 @@ ipcMain.handle('settings:save', (_event, settings: Record<string, unknown>) => {
 - [ ] **Step 5: Run dev and verify**
 
 ```bash
-npm run dev
+pnpmdev
 ```
 
 Expected: Settings button opens dialog with GPU info, tier selection, and API key config. Compare mode allows selecting two games for side-by-side comparison.
@@ -3158,7 +3158,7 @@ import './assets/styles.css'
 - [ ] **Step 3: Run dev and verify visual appearance**
 
 ```bash
-npm run dev
+pnpmdev
 ```
 
 Expected: App has clean, structured layout with proper spacing, colors, and responsive grid.
@@ -3179,7 +3179,7 @@ git commit -m "feat: add app-wide styling"
 - [ ] **Step 1: Start the app**
 
 ```bash
-npm run dev
+pnpmdev
 ```
 
 - [ ] **Step 2: Verify full flow**
@@ -3239,7 +3239,7 @@ Add to `package.json` build config:
 - [ ] **Step 2: Test production build**
 
 ```bash
-npm run build
+pnpmbuild
 ```
 
 Expected: Build succeeds without errors.

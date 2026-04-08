@@ -33,17 +33,23 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
   ipcMain.handle('game:delete', (_event, appId: number) => deleteGame(db, appId))
   ipcMain.handle('game:stats', (_event, appId: number) => getGameStats(db, appId))
 
-  ipcMain.handle('reviews:fetch', async (_event, appId: number) => {
+  ipcMain.handle('reviews:fetch', async (_event, appId: number, options?: { maxReviews?: number }) => {
     const win = getMainWindow()
+    const existing = getGame(db, appId)
     await fetchAllReviews(
       appId,
       (reviews, summary) => {
-        if (summary) insertGame(db, summary)
+        if (summary) {
+          // Preserve app_name from initial game:add fetch
+          if (!summary.app_name && existing?.app_name) summary.app_name = existing.app_name
+          insertGame(db, summary)
+        }
         upsertReviews(db, reviews)
       },
       (progress) => {
         win?.webContents.send('progress', { type: 'fetch', appId, ...progress })
-      }
+      },
+      { maxReviews: options?.maxReviews ?? 5000 }
     )
     return getGameStats(db, appId)
   })

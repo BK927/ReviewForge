@@ -72,7 +72,7 @@ export async function fetchAllReviews(
   appId: number,
   onBatch: (reviews: ReturnType<typeof transformReview>[], summary: ReturnType<typeof transformQuerySummary> | null) => void,
   onProgress: (progress: FetchProgress) => void,
-  options: { language?: string; filterOfftopic?: boolean } = {}
+  options: { language?: string; filterOfftopic?: boolean; maxReviews?: number } = {}
 ): Promise<void> {
   let cursor = '*'
   let totalReviews = 0
@@ -81,8 +81,10 @@ export async function fetchAllReviews(
 
   const language = options.language ?? 'all'
   const offtopic = options.filterOfftopic !== false ? 1 : 0
+  const maxReviews = options.maxReviews ?? 50000
 
   while (true) {
+    if (fetchedCount >= maxReviews) break
     const url = `https://store.steampowered.com/appreviews/${appId}?json=1&filter=recent&language=${language}&num_per_page=100&cursor=${encodeURIComponent(cursor)}&filter_offtopic_activity=${offtopic}`
 
     const response = await fetchJson(url)

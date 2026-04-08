@@ -1,5 +1,5 @@
 import { spawn, ChildProcess } from 'child_process'
-import { v4 as uuidv4 } from 'uuid'
+import { randomUUID } from 'crypto'
 import path from 'path'
 import { app } from 'electron'
 
@@ -70,7 +70,7 @@ export class SidecarManager {
       await this.start()
     }
 
-    const id = uuidv4()
+    const id = randomUUID()
     const message = JSON.stringify({ id, method, params }) + '\n'
 
     return new Promise((resolve, reject) => {
