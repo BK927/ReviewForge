@@ -63,7 +63,12 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
   })
 
   ipcMain.handle('analysis:run', async (_event, appId: number, config: Record<string, unknown>) => {
-    const reviews = getReviews(db, appId, config.filter as Parameters<typeof getReviews>[2])
+    let reviews = getReviews(db, appId, config.filter as Parameters<typeof getReviews>[2])
+    const totalAvailable = reviews.length
+    const maxReviews = config.maxReviews as number | undefined
+    if (maxReviews && reviews.length > maxReviews) {
+      reviews = reviews.slice(0, maxReviews)
+    }
     const reviewData = reviews.map(r => ({
       id: r.recommendation_id,
       text: r.review_text,
@@ -72,9 +77,10 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
       playtime: r.playtime_at_review
     }))
     const win = getMainWindow()
-    return sidecar.send('analyze', { reviews: reviewData, config }, (progress) => {
+    const result = await sidecar.send('analyze', { reviews: reviewData, config }, (progress) => {
       win?.webContents.send('progress', { type: 'analysis', appId, ...progress })
-    })
+    }) as Record<string, unknown>
+    return { ...result, total_available: totalAvailable, sampled: reviews.length < totalAvailable }
   })
 
   ipcMain.handle('export:csv', async (_event, appId: number, filter: Record<string, unknown>) => {

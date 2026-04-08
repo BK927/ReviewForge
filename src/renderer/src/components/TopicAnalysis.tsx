@@ -14,6 +14,8 @@ interface AnalysisResult {
   positive_topics: Topic[]
   negative_topics: Topic[]
   total_reviews: number
+  total_available?: number
+  sampled?: boolean
   positive_count: number
   negative_count: number
   tier: number
@@ -25,8 +27,17 @@ export function TopicAnalysis({ appId }: { appId: number }) {
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [expandedTopic, setExpandedTopic] = useState<string | null>(null)
   const [nTopics, setNTopics] = useState(8)
+  const [reviewLimit, setReviewLimit] = useState<'all' | number>('all')
+  const [totalReviews, setTotalReviews] = useState(0)
+
+  useEffect(() => {
+    api.getGameStats(appId).then((stats: any) => {
+      setTotalReviews(stats.total_collected ?? 0)
+    })
+  }, [appId])
 
   useEffect(() => {
     const cleanup = api.onProgress((data: any) => {
@@ -37,14 +48,23 @@ export function TopicAnalysis({ appId }: { appId: number }) {
     return () => { cleanup() }
   }, [appId])
 
+  const effectiveCount = reviewLimit === 'all' ? totalReviews : Math.min(reviewLimit, totalReviews)
+  const effectiveMinutes = Math.ceil(effectiveCount * 0.66 / 64 / 60)
+
   const runAnalysis = async () => {
     setLoading(true)
+    setError(null)
     setProgress('Starting analysis...')
     try {
-      const res = await api.runAnalysis(appId, { n_topics: nTopics }) as AnalysisResult
+      const config: Record<string, unknown> = { n_topics: nTopics }
+      if (reviewLimit !== 'all') {
+        config.maxReviews = reviewLimit
+      }
+      const res = await api.runAnalysis(appId, config) as AnalysisResult
       setResult(res)
     } catch (e) {
       console.error(e)
+      setError(e instanceof Error ? e.message : 'Analysis failed. Check the developer console for details.')
     } finally {
       setLoading(false)
       setProgress('')
@@ -62,10 +82,35 @@ export function TopicAnalysis({ appId }: { appId: number }) {
           Topics per group:
           <input type="number" value={nTopics} onChange={e => setNTopics(Number(e.target.value))} min={2} max={20} />
         </label>
+        <label>
+          Reviews to analyze:
+          <select
+            value={reviewLimit === 'all' ? 'all' : String(reviewLimit)}
+            onChange={e => setReviewLimit(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+          >
+            <option value="all">All ({totalReviews.toLocaleString()})</option>
+            <option value="1000">1,000</option>
+            <option value="3000">3,000</option>
+            <option value="5000">5,000</option>
+            <option value="10000">10,000</option>
+          </select>
+        </label>
         <button onClick={runAnalysis} disabled={loading}>
           {loading ? progress || 'Analyzing...' : 'Run Analysis'}
         </button>
       </div>
+
+      {!loading && effectiveCount > 3000 && (
+        <div className="analysis-warning">
+          Analyzing {effectiveCount.toLocaleString()} reviews may take approximately <strong>{effectiveMinutes} min</strong> on CPU. You can reduce the count above for faster results.
+        </div>
+      )}
+
+      {error && (
+        <div className="analysis-error">
+          <strong>Analysis Error:</strong> {error}
+        </div>
+      )}
 
       {loading && <TopicsSkeleton />}
 
@@ -73,7 +118,7 @@ export function TopicAnalysis({ appId }: { appId: number }) {
         <div className="analysis-meta">
           <span>Model: {result.model}</span>
           <span>Tier: {result.tier}</span>
-          <span>Reviews: {result.total_reviews}</span>
+          <span>Reviews: {result.total_reviews.toLocaleString()}{result.sampled ? ` (sampled from ${result.total_available?.toLocaleString()})` : ''}</span>
         </div>
       )}
 

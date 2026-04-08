@@ -25,7 +25,8 @@ export class SidecarManager {
 
       this.process = spawn(pythonPath, [scriptPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        cwd: path.dirname(scriptPath)
+        cwd: path.dirname(scriptPath),
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
       })
 
       this.process.stdout!.on('data', (chunk: Buffer) => {
@@ -54,7 +55,13 @@ export class SidecarManager {
       this.process.on('exit', (code) => {
         this.ready = false
         this.process = null
-        if (!this.ready) reject(new Error(`Sidecar exited with code ${code}`))
+        this.readyPromise = null
+        // Reject all pending requests when sidecar crashes
+        for (const [, req] of this.pending) {
+          req.reject(new Error(`Sidecar exited unexpectedly (code ${code})`))
+        }
+        this.pending.clear()
+        reject(new Error(`Sidecar exited with code ${code}`))
       })
 
       setTimeout(() => {
