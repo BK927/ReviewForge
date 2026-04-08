@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { GameSidebar } from './GameSidebar'
 import { CompareView } from './CompareView'
 import { SettingsDialog } from './SettingsDialog'
@@ -20,6 +20,18 @@ export function Layout({ children }: Props) {
   const [compareMode, setCompareMode] = useState(false)
   const [compareIds, setCompareIds] = useState<number[]>([])
   const [showSettings, setShowSettings] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 800) {
+        setSidebarCollapsed(true)
+      }
+    }
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   const handleToggleCompare = (appId: number) => {
     setCompareIds(prev => {
@@ -42,6 +54,8 @@ export function Layout({ children }: Props) {
         compareMode={compareMode}
         compareIds={compareIds}
         onToggleCompare={handleToggleCompare}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
       />
       <main className="main-content">
         <nav className="tab-nav">

@@ -125,6 +125,65 @@ body {
 }
 .delete-btn:hover { color: #f38ba8; background: rgba(243,139,168,0.1); }
 
+/* ── Sidebar Collapse ── */
+.sidebar {
+  transition: width 250ms ease-out;
+}
+
+.sidebar.collapsed {
+  width: var(--sidebar-collapsed-width);
+}
+
+.sidebar.collapsed .sidebar-header {
+  padding: 12px 8px;
+  text-align: center;
+}
+
+.sidebar.collapsed .game-input {
+  display: none;
+}
+
+.sidebar.collapsed .game-list li {
+  padding: 8px;
+  justify-content: center;
+}
+
+.sidebar.collapsed .game-info {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  background: #313244;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #cdd6f4;
+}
+
+.sidebar.collapsed .game-info .game-name,
+.sidebar.collapsed .game-info .game-score,
+.sidebar.collapsed .delete-btn {
+  display: none;
+}
+
+.sidebar-toggle {
+  background: none;
+  border: none;
+  color: #6c7086;
+  cursor: pointer;
+  padding: 8px;
+  font-size: 16px;
+  border-top: 1px solid #313244;
+  text-align: center;
+  width: 100%;
+}
+
+.sidebar-toggle:hover {
+  color: #cdd6f4;
+  background: #313244;
+}
+
 /* ── Tab nav ── */
 .tab-nav {
   display: flex;
