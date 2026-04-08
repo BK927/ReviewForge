@@ -203,6 +203,7 @@ body {
   background: white;
   border-bottom: 1px solid #e5e7eb;
   flex-shrink: 0;
+  position: relative;
 }
 
 .tab-nav button {
@@ -217,12 +218,22 @@ body {
 }
 
 .tab-nav button:hover { color: #374151; }
-.tab-nav button.active { border-bottom-color: #6d28d9; color: #6d28d9; }
+.tab-nav button.active { border-bottom-color: transparent; color: #6d28d9; }
 
 .nav-spacer { flex: 1; }
 
 .compare-btn { color: #059669 !important; }
 .compare-btn.active { border-bottom-color: #059669 !important; color: #059669 !important; }
+
+.tab-indicator {
+  position: absolute;
+  bottom: 0;
+  height: 2px;
+  background: #6d28d9;
+  transition: left 300ms cubic-bezier(0.4, 0, 0.2, 1), width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 1px 1px 0 0;
+  pointer-events: none;
+}
 
 .settings-btn {
   font-size: 18px !important;
@@ -749,5 +760,22 @@ body {
   :root {
     --content-padding: 16px;
     --grid-gap: 16px;
+  }
+}
+
+/* ── Tab Content Transition ── */
+.tab-content-inner {
+  animation: tabFadeIn 250ms ease-out;
+  height: 100%;
+}
+
+@keyframes tabFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
