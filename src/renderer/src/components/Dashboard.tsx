@@ -44,6 +44,17 @@ export function Dashboard({ appId }: { appId: number }) {
 
   useEffect(() => { loadData() }, [appId])
 
+  // Compute recentPosRate before guard so useCountUp can use it (Rules of Hooks)
+  const now = Math.floor(Date.now() / 1000)
+  const thirtyDaysAgo = now - 30 * 24 * 3600
+  const recent = reviews.filter(r => r.timestamp_created >= thirtyDaysAgo)
+  const recentPosRate = recent.length > 0 ? recent.filter(r => r.voted_up).length / recent.length : null
+
+  // All hooks must be called before early returns (Rules of Hooks)
+  const animatedCollected = useCountUp(stats?.total_collected ?? 0)
+  const animatedPositiveRate = useCountUp(stats ? Math.round(stats.positive_rate * 1000) : 0)
+  const animatedRecentRate = useCountUp(recentPosRate !== null ? Math.round(recentPosRate * 1000) : 0)
+
   if (!game || !stats) return <DashboardSkeleton />
 
   // Donut chart: positive/negative
@@ -110,17 +121,6 @@ export function Dashboard({ appId }: { appId: number }) {
     yAxis: { type: 'value' as const },
     series: [{ type: 'bar', data: langSorted.map(([, count]) => count), color: '#60a5fa' }]
   }
-
-  // Last-30-day comparison
-  const now = Math.floor(Date.now() / 1000)
-  const thirtyDaysAgo = now - 30 * 24 * 3600
-  const recent = reviews.filter(r => r.timestamp_created >= thirtyDaysAgo)
-  const recentPosRate = recent.length > 0 ? recent.filter(r => r.voted_up).length / recent.length : null
-
-  const animatedCollected = useCountUp(stats.total_collected)
-  const animatedPositiveRate = useCountUp(Math.round(stats.positive_rate * 1000))
-  const recentPosRateRaw = recentPosRate !== null ? Math.round(recentPosRate * 1000) : 0
-  const animatedRecentRate = useCountUp(recentPosRateRaw)
 
   return (
     <div className="dashboard">
