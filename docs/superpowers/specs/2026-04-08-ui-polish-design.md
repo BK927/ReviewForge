@@ -91,6 +91,37 @@ ReviewForge UI의 두 가지 문제를 해결한다:
 - `src/renderer/src/components/App.tsx` 또는 탭 네비게이션 컴포넌트 — 인디케이터 + 전환 로직
 - `src/renderer/src/assets/styles.css` — `.tab-indicator`, `.tab-content-enter` 등
 
+## 6. 반응형 대응
+
+콘텐츠는 항상 가용 너비를 꽉 채운다. `max-width` 제한 없음.
+
+### 브레이크포인트
+
+| 구간 | 창 너비 | 사이드바 | 그리드 컬럼 | 패딩 |
+|------|---------|---------|------------|------|
+| Narrow | < 800px | 접힘 (아이콘 48px) | 1열 | 8px |
+| Medium | 800~1200px | 펼침 (260px) | 2열 | 12px |
+| Wide | > 1200px | 펼침 (260px) | 3열 | 16px |
+
+### 사이드바 접힘
+- 창 너비 800px 미만 시 사이드바가 아이콘 모드(48px)로 자동 축소
+- 게임 이름 숨기고 아이콘/이니셜만 표시
+- 토글 버튼으로 수동 펼침/접기도 가능
+- `transition: width 250ms ease-out`
+
+### 그리드 반응형
+- `.charts-grid`: `grid-template-columns: repeat(auto-fill, minmax(350px, 1fr))`
+- 좁은 창: 1열, 중간: 2열, 넓은 창: 3열+ 자동 확장
+- 카드가 항상 가용 공간을 꽉 채움
+
+### 패딩 스케일링
+- CSS custom property로 관리: `--content-padding`
+- 미디어 쿼리로 구간별 값 조정 (8px / 12px / 16px)
+
+### 영향 범위
+- `src/renderer/src/assets/styles.css` — 미디어 쿼리, CSS 변수, 사이드바 접힘 스타일
+- `src/renderer/src/components/App.tsx` — 사이드바 토글 상태 관리
+
 ## 타이밍 원칙 (Mixed)
 
 | 카테고리 | duration | easing | 예시 |
@@ -101,11 +132,12 @@ ReviewForge UI의 두 가지 문제를 해결한다:
 
 ## 구현 순서 (권장)
 
-1. Compact Layout (CSS만 수정, 가장 빠름)
-2. Hover & Press 피드백 (CSS만 수정)
-3. 탭 전환 트랜지션 (CSS + 약간의 JSX)
-4. 숫자 & 차트 애니메이션 (훅 + ECharts 설정)
-5. 로딩 스켈레톤 (새 컴포넌트 + 각 탭 수정, 가장 큰 작업)
+1. Compact Layout + 반응형 기반 (CSS 변수, 미디어 쿼리, 그리드 수정)
+2. 사이드바 접힘 (아이콘 모드 + 토글)
+3. Hover & Press 피드백 (CSS)
+4. 탭 전환 트랜지션 (CSS + JSX)
+5. 숫자 & 차트 애니메이션 (훅 + ECharts 설정)
+6. 로딩 스켈레톤 (새 컴포넌트 + 각 탭 수정, 가장 큰 작업)
 
 ## 제외 사항
 
@@ -113,3 +145,4 @@ ReviewForge UI의 두 가지 문제를 해결한다:
 - 색상/테마 변경 없음
 - 폰트 변경 없음
 - 특정 탭 레이아웃 재구성 없음
+- `max-width` 제한 없음 — 콘텐츠는 항상 가용 너비를 꽉 채움
