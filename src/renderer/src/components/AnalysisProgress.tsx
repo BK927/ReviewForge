@@ -85,6 +85,13 @@ export function AnalysisProgress({ data }: { data: ProgressData }) {
         </>
       )}
 
+      {data.stage === 'idle' && data.message && (
+        <div className="progress-detail">
+          <span className="progress-spinner" />
+          <span>{data.message}</span>
+        </div>
+      )}
+
       {(data.stage === 'clustering' || data.stage === 'keywords') && (
         <div className="progress-detail">
           <span className="progress-spinner" />

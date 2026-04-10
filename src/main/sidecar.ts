@@ -6,7 +6,7 @@ import { app } from 'electron'
 interface PendingRequest {
   resolve: (data: unknown) => void
   reject: (error: Error) => void
-  onProgress?: (data: { percent: number; message: string }) => void
+  onProgress?: (data: { percent: number; message: string; stage?: string; elapsed_ms?: number }) => void
 }
 
 export class SidecarManager {
@@ -72,7 +72,7 @@ export class SidecarManager {
     return this.readyPromise
   }
 
-  async send(method: string, params: Record<string, unknown> = {}, onProgress?: (data: { percent: number; message: string }) => void): Promise<unknown> {
+  async send(method: string, params: Record<string, unknown> = {}, onProgress?: (data: { percent: number; message: string; stage?: string; elapsed_ms?: number }) => void): Promise<unknown> {
     if (!this.process || !this.ready) {
       await this.start()
     }
@@ -106,7 +106,7 @@ export class SidecarManager {
       this.pending.delete(msg.id)
       pending.reject(new Error((msg.data as { message: string }).message))
     } else if (msg.type === 'progress') {
-      pending.onProgress?.(msg.data as { percent: number; message: string })
+      pending.onProgress?.(msg.data as { percent: number; message: string; stage?: string; elapsed_ms?: number })
     }
   }
 
