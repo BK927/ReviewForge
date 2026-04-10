@@ -81,7 +81,7 @@ export async function fetchAllReviews(
 
   const language = options.language ?? 'all'
   const offtopic = options.filterOfftopic !== false ? 1 : 0
-  const maxReviews = options.maxReviews ?? 50000
+  const maxReviews = options.maxReviews ?? Infinity
 
   while (true) {
     if (fetchedCount >= maxReviews) break

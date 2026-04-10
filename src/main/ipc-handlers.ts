@@ -60,7 +60,7 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
       (progress) => {
         win?.webContents.send('progress', { type: 'fetch', appId, ...progress })
       },
-      { maxReviews: options?.maxReviews ?? 5000 }
+      { maxReviews: options?.maxReviews }
     )
     return getGameStats(db, appId)
   })
