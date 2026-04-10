@@ -3,7 +3,7 @@ import { useApi } from '../hooks/useApi'
 import { AnalysisProgress, ProgressData } from './AnalysisProgress'
 import { estimateLocalAnalysisMinutes } from '../lib/analysis-timing'
 
-interface Topic {
+export interface Topic {
   id: number
   label: string
   keywords: { word: string; score: number }[]
@@ -11,7 +11,7 @@ interface Topic {
   sample_reviews: string[]
 }
 
-interface AnalysisResult {
+export interface AnalysisResult {
   positive_topics: Topic[]
   negative_topics: Topic[]
   total_reviews: number
@@ -23,7 +23,12 @@ interface AnalysisResult {
   model: string
 }
 
-export function TopicAnalysis({ appId }: { appId: number }) {
+interface TopicAnalysisProps {
+  appId: number
+  onAnalysisComplete: (result: AnalysisResult | null) => void
+}
+
+export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps) {
   const api = useApi()
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [loading, setLoading] = useState(false)
@@ -38,8 +43,16 @@ export function TopicAnalysis({ appId }: { appId: number }) {
     setResult(null)
     setError(null)
     setProgress({ stage: 'idle', percent: 0, message: '', elapsed_ms: 0 })
+    onAnalysisComplete(null)
     api.getGameStats(appId).then((stats: any) => {
       setTotalReviews(stats.total_collected ?? 0)
+    })
+    // Load cached analysis result if available
+    api.getCachedAnalysis(appId).then((cached: any) => {
+      if (cached) {
+        setResult(cached)
+        onAnalysisComplete(cached)
+      }
     })
   }, [appId])
 
@@ -71,6 +84,7 @@ export function TopicAnalysis({ appId }: { appId: number }) {
       }
       const res = await api.runAnalysis(appId, config) as AnalysisResult
       setResult(res)
+      onAnalysisComplete(res)
     } catch (e) {
       console.error(e)
       setError(e instanceof Error ? e.message : 'Analysis failed. Check the developer console for details.')

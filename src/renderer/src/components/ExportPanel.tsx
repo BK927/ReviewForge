@@ -1,9 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useApi } from '../hooks/useApi'
-import { reviewsToMarkdown, reviewsToLlmPrompt, DEFAULT_LLM_TEMPLATE } from '../lib/export-utils'
+import { reviewsToMarkdown, analysisToLlmPrompt, DEFAULT_LLM_TEMPLATE } from '../lib/export-utils'
 import { getLanguageDisplayName } from '../lib/steam-languages'
+import type { AnalysisResult } from './TopicAnalysis'
 
-export function ExportPanel({ appId }: { appId: number }) {
+interface ExportPanelProps {
+  appId: number
+  analysisResult: AnalysisResult | null
+}
+
+export function ExportPanel({ appId, analysisResult }: ExportPanelProps) {
   const api = useApi()
   const [reviews, setReviews] = useState<any[]>([])
   const [game, setGame] = useState<any>(null)
@@ -11,7 +17,6 @@ export function ExportPanel({ appId }: { appId: number }) {
   const [sentimentFilter, setSentimentFilter] = useState<'all' | 'positive' | 'negative'>('all')
   const [languages, setLanguages] = useState<string[]>([])
   const [template, setTemplate] = useState(DEFAULT_LLM_TEMPLATE)
-  const [maxReviews, setMaxReviews] = useState(50)
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -33,7 +38,6 @@ export function ExportPanel({ appId }: { appId: number }) {
     load()
   }, [appId, langFilter, sentimentFilter])
 
-  const limited = reviews.slice(0, maxReviews)
   const gameName = (game as any)?.app_name ?? `App ${appId}`
   const filterDesc = `${langFilter === 'all' ? 'All languages' : getLanguageDisplayName(langFilter)}, ${sentimentFilter}`
 
@@ -46,19 +50,19 @@ export function ExportPanel({ appId }: { appId: number }) {
   }
 
   const handleCopyReviews = async () => {
-    const text = reviewsToMarkdown(limited, gameName, filterDesc)
+    const text = reviewsToMarkdown(reviews, gameName, filterDesc)
     await navigator.clipboard.writeText(text)
     setCopiedBriefly()
   }
 
   const handleCopyWithPrompt = async () => {
-    const text = reviewsToLlmPrompt(limited, gameName, template, {
-      language: langFilter === 'all' ? 'all' : getLanguageDisplayName(langFilter),
-      period: 'all time'
-    })
+    if (!analysisResult) return
+    const text = analysisToLlmPrompt(analysisResult, gameName, template)
     await navigator.clipboard.writeText(text)
     setCopiedBriefly()
   }
+
+  const hasAnalysis = analysisResult !== null
 
   return (
     <div className="export-panel">
@@ -78,10 +82,6 @@ export function ExportPanel({ appId }: { appId: number }) {
             <option value="negative">Negative</option>
           </select>
         </label>
-        <label>
-          Max reviews for clipboard:
-          <input type="number" value={maxReviews} onChange={e => setMaxReviews(Number(e.target.value))} min={10} max={500} />
-        </label>
       </div>
 
       <p className="review-count">{reviews.length} reviews match current filters</p>
@@ -93,10 +93,10 @@ export function ExportPanel({ appId }: { appId: number }) {
 
         <h3>Clipboard</h3>
         <button onClick={handleCopyReviews}>
-          {copied ? 'Copied!' : `Copy Reviews (${limited.length})`}
+          {copied ? 'Copied!' : `Copy Reviews (${reviews.length})`}
         </button>
-        <button onClick={handleCopyWithPrompt}>
-          Copy with LLM Prompt
+        <button onClick={handleCopyWithPrompt} disabled={!hasAnalysis}>
+          {!hasAnalysis ? 'Run Topic Analysis first' : copied ? 'Copied!' : 'Copy with LLM Prompt'}
         </button>
       </div>
 
@@ -105,9 +105,9 @@ export function ExportPanel({ appId }: { appId: number }) {
         <textarea
           value={template}
           onChange={e => setTemplate(e.target.value)}
-          rows={10}
+          rows={12}
         />
-        <p className="hint">Placeholders: [Game Name], [N], [positive/negative], [selected language], [selected period], [Review data]</p>
+        <p className="hint">Placeholders: [Game Name], [N], [Positive count], [Negative count], [Model], [Review data]</p>
       </div>
     </div>
   )

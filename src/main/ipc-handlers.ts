@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow, dialog, app } from 'electron'
 import Database from 'better-sqlite3'
-import { insertGame, getGame, getAllGames, deleteGame, getGameStats, upsertReviews, getReviews } from './db'
+import { insertGame, getGame, getAllGames, deleteGame, getGameStats, upsertReviews, getReviews, saveAnalysisCache } from './db'
+import crypto from 'crypto'
 import { parseAppId, fetchAllReviews, fetchGameName, transformQuerySummary } from './steam-api'
 import { SidecarManager } from './sidecar'
 import { resolveAnalysisConfig, type SavedSettings } from './analysis-settings'
@@ -68,6 +69,17 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
     return getReviews(db, appId, filter as Parameters<typeof getReviews>[2])
   })
 
+  ipcMain.handle('analysis:get-cached', (_event, appId: number) => {
+    // Return the most recent cached result for this app, regardless of config
+    const row = db.prepare('SELECT result_json FROM analysis_cache WHERE app_id = ? AND analysis_type = ? ORDER BY created_at DESC LIMIT 1').get(appId, 'topics') as { result_json: string } | undefined
+    if (!row) return null
+    try {
+      return JSON.parse(row.result_json)
+    } catch {
+      return null
+    }
+  })
+
   ipcMain.handle('analysis:detect-gpu', async () => {
     return sidecar.send('detect_gpu')
   })
@@ -107,7 +119,14 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
     const result = await sidecar.send('analyze', { reviews: reviewData, config: analysisConfig }, (progress) => {
       win?.webContents.send('progress', { type: 'analysis', appId, ...progress })
     }) as Record<string, unknown>
-    return { ...result, total_available: totalAvailable, sampled: reviews.length < totalAvailable }
+    const finalResult = { ...result, total_available: totalAvailable, sampled: reviews.length < totalAvailable }
+
+    // Persist to DB cache
+    const configHash = crypto.createHash('md5').update(JSON.stringify({ n_topics: analysisConfig.n_topics, maxReviews: analysisConfig.maxReviews })).digest('hex')
+    const langFilter = (analysisConfig.filter as Record<string, unknown> | undefined)?.language as string ?? 'all'
+    saveAnalysisCache(db, appId, 'topics', langFilter, configHash, JSON.stringify(finalResult))
+
+    return finalResult
   })
 
   ipcMain.handle('export:csv', async (_event, appId: number, filter: Record<string, unknown>) => {

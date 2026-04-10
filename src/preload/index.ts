@@ -16,6 +16,7 @@ const api = {
   // Analysis
   detectGpu: () => ipcRenderer.invoke('analysis:detect-gpu'),
   runAnalysis: (appId: number, config: Record<string, unknown>) => ipcRenderer.invoke('analysis:run', appId, config),
+  getCachedAnalysis: (appId: number) => ipcRenderer.invoke('analysis:get-cached', appId),
 
   // Export
   exportCsv: (appId: number, filter: Record<string, unknown>) => ipcRenderer.invoke('export:csv', appId, filter),
