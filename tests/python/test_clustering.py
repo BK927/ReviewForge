@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import python.clustering as clustering
 from python.clustering import cluster_reviews
 
 
@@ -29,3 +30,24 @@ def test_hdbscan_returns_labels():
     # HDBSCAN may assign -1 (noise), but should find at least 2 clusters
     unique = set(l for l in labels if l >= 0)
     assert len(unique) >= 2
+
+
+def test_kmeans_forwards_seeded_random_state(monkeypatch):
+    captured = {}
+
+    class FakeKMeans:
+        def __init__(self, n_clusters, random_state, n_init):
+            captured["n_clusters"] = n_clusters
+            captured["random_state"] = random_state
+            captured["n_init"] = n_init
+
+        def fit_predict(self, vectors):
+            return np.zeros(len(vectors), dtype=int)
+
+    monkeypatch.setattr(clustering, "KMeans", FakeKMeans)
+
+    vecs = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
+    labels = cluster_reviews(vecs, method="kmeans", n_clusters=3, random_state=17)
+
+    assert labels == [0, 0, 0]
+    assert captured == {"n_clusters": 3, "random_state": 17, "n_init": 10}

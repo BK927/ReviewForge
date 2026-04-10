@@ -6,7 +6,8 @@ def cluster_reviews(
     vectors: np.ndarray,
     method: str = "kmeans",
     n_clusters: int = 8,
-    min_cluster_size: int = 5
+    min_cluster_size: int = 5,
+    random_state: int = 42
 ) -> list[int]:
     """Cluster review embeddings. Returns list of cluster labels."""
     if len(vectors) < 2:
@@ -24,6 +25,6 @@ def cluster_reviews(
 
     else:  # kmeans
         actual_k = min(n_clusters, len(vectors))
-        km = KMeans(n_clusters=actual_k, random_state=42, n_init=10)
+        km = KMeans(n_clusters=actual_k, random_state=random_state, n_init=10)
         labels = km.fit_predict(vectors)
         return labels.tolist()
