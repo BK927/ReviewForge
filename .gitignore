@@ -9,3 +9,4 @@ python/.venv/
 *.db
 .claude/
 .superpowers/
+.worktrees/
