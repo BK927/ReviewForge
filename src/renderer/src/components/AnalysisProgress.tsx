@@ -85,6 +85,13 @@ export function AnalysisProgress({ data }: { data: ProgressData }) {
         </>
       )}
 
+      {data.stage === 'embedding' && !counts && (
+        <div className="progress-detail">
+          <span className="progress-spinner" />
+          <span>{data.message}</span>
+        </div>
+      )}
+
       {data.stage === 'idle' && data.message && (
         <div className="progress-detail">
           <span className="progress-spinner" />
