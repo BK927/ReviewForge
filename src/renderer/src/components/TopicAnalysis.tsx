@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useApi } from '../hooks/useApi'
 import { AnalysisProgress, ProgressData } from './AnalysisProgress'
 import { estimateLocalAnalysisMinutes } from '../lib/analysis-timing'
+import { TopicCountMode, TopicCountModeControl } from './TopicCountModeControl'
 
 export interface Topic {
   id: number
@@ -21,6 +22,12 @@ export interface AnalysisResult {
   negative_count: number
   tier: number
   model: string
+  topic_count_mode?: TopicCountMode
+  requested_k?: number | null
+  effective_k?: number | null
+  recommendation_confidence?: 'high' | 'medium' | 'low' | null
+  recommendation_reason?: string | null
+  recommendation_details?: Record<string, unknown> | null
 }
 
 interface TopicAnalysisProps {
@@ -36,6 +43,9 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
   const [error, setError] = useState<string | null>(null)
   const [expandedTopic, setExpandedTopic] = useState<string | null>(null)
   const [nTopics, setNTopics] = useState(8)
+  const [topicCountMode, setTopicCountMode] = useState<TopicCountMode>('auto')
+  const [analysisTier, setAnalysisTier] = useState(0)
+  const [showRecommendationStage, setShowRecommendationStage] = useState(false)
   const [reviewLimit, setReviewLimit] = useState<'all' | number>('all')
   const [totalReviews, setTotalReviews] = useState(0)
 
@@ -57,6 +67,35 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
   }, [appId])
 
   useEffect(() => {
+    let disposed = false
+    ;(async () => {
+      try {
+        const settings = (await api.getSettings()) as { tier?: 'auto' | '0' | '1' }
+        if (settings?.tier === '1') {
+          if (!disposed) {
+            setAnalysisTier(1)
+            setTopicCountMode('auto')
+          }
+          return
+        }
+        if (settings?.tier === '0') {
+          if (!disposed) setAnalysisTier(0)
+          return
+        }
+        const gpu = (await api.detectGpu()) as { recommended_tier?: number }
+        const resolvedTier = Number(gpu?.recommended_tier ?? 0) >= 1 ? 1 : 0
+        if (!disposed) {
+          setAnalysisTier(resolvedTier)
+          if (resolvedTier >= 1) setTopicCountMode('auto')
+        }
+      } catch {
+        if (!disposed) setAnalysisTier(0)
+      }
+    })()
+    return () => { disposed = true }
+  }, [appId])
+
+  useEffect(() => {
     const cleanup = api.onProgress((data: any) => {
       if (data.type === 'analysis' && data.appId === appId) {
         setProgress({
@@ -72,13 +111,15 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
 
   const effectiveCount = reviewLimit === 'all' ? totalReviews : Math.min(reviewLimit, totalReviews)
   const effectiveMinutes = estimateLocalAnalysisMinutes(effectiveCount)
+  const normalizedTopicCountMode: TopicCountMode = analysisTier >= 1 ? 'auto' : topicCountMode
 
   const runAnalysis = async () => {
     setLoading(true)
     setError(null)
+    setShowRecommendationStage(analysisTier === 0 && normalizedTopicCountMode === 'auto')
     setProgress({ stage: 'idle', percent: 0, message: 'Starting analysis...', elapsed_ms: 0 })
     try {
-      const config: Record<string, unknown> = { n_topics: nTopics }
+      const config: Record<string, unknown> = { n_topics: nTopics, topicCountMode: normalizedTopicCountMode }
       if (reviewLimit !== 'all') {
         config.maxReviews = reviewLimit
       }
@@ -90,6 +131,7 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
       setError(e instanceof Error ? e.message : 'Analysis failed. Check the developer console for details.')
     } finally {
       setLoading(false)
+      setShowRecommendationStage(false)
       setProgress({ stage: 'idle', percent: 0, message: '', elapsed_ms: 0 })
     }
   }
@@ -101,10 +143,14 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
   return (
     <div className="topic-analysis">
       <div className="analysis-controls">
-        <label>
-          Topics per group:
-          <input type="number" value={nTopics} onChange={e => setNTopics(Number(e.target.value))} min={2} max={20} />
-        </label>
+        <TopicCountModeControl
+          tier={analysisTier}
+          mode={normalizedTopicCountMode}
+          nTopics={nTopics}
+          disabled={loading}
+          onModeChange={setTopicCountMode}
+          onNTopicsChange={setNTopics}
+        />
         <label>
           Reviews to analyze:
           <select
@@ -135,13 +181,34 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
         </div>
       )}
 
-      {loading && <AnalysisProgress data={progress} />}
+      {loading && (
+        <AnalysisProgress
+          data={progress}
+          showRecommendationStage={showRecommendationStage}
+        />
+      )}
 
       {result && (
         <div className="analysis-meta">
           <span>Model: {result.model}</span>
           <span>Tier: {result.tier}</span>
-          <span>Reviews: {result.total_reviews.toLocaleString()}{result.sampled ? ` (sampled from ${result.total_available?.toLocaleString()})` : ''}</span>
+          <span>Mode: {(result.topic_count_mode ?? normalizedTopicCountMode).toUpperCase()}</span>
+          <span>
+            Effective topics:{' '}
+            {result.tier >= 1
+              ? 'Auto by HDBSCAN'
+              : (result.effective_k ?? result.requested_k ?? nTopics)}
+          </span>
+          {result.recommendation_confidence && (
+            <span>Confidence: {result.recommendation_confidence}</span>
+          )}
+          {result.recommendation_reason && (
+            <span>Reason: {result.recommendation_reason}</span>
+          )}
+          <span>
+            Reviews: {result.total_reviews.toLocaleString()}
+            {result.sampled ? ` (sampled from ${result.total_available?.toLocaleString()})` : ''}
+          </span>
         </div>
       )}
 

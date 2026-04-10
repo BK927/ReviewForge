@@ -417,6 +417,40 @@ body {
   font-size: 14px;
 }
 
+.topic-count-mode-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.topic-count-mode-label {
+  font-size: 14px;
+  color: #374151;
+  font-weight: 500;
+}
+
+.topic-count-mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.topic-count-mode-locked {
+  font-size: 13px;
+  color: #2563eb;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.topic-count-mode-control.locked {
+  min-width: 220px;
+}
+
 .analysis-controls input[type="number"] {
   width: 60px;
   padding: 4px 8px;
@@ -551,7 +585,8 @@ body {
 
 .analysis-meta {
   display: flex;
-  gap: 16px;
+  gap: 10px 16px;
+  flex-wrap: wrap;
   font-size: 12px;
   color: #6b7280;
   margin-bottom: 16px;

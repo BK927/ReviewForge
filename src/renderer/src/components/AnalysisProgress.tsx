@@ -1,8 +1,10 @@
-const STAGES = ['embedding', 'clustering', 'keywords'] as const
-type Stage = typeof STAGES[number]
+const BASE_STAGES = ['embedding', 'clustering', 'keywords'] as const
+const STAGES_WITH_RECOMMENDATION = ['embedding', 'recommendation', 'clustering', 'keywords'] as const
+type Stage = 'embedding' | 'recommendation' | 'clustering' | 'keywords'
 
 const STAGE_LABELS: Record<Stage, string> = {
   embedding: 'Embedding',
+  recommendation: 'Recommendation',
   clustering: 'Clustering',
   keywords: 'Keywords'
 }
@@ -14,10 +16,14 @@ export interface ProgressData {
   elapsed_ms: number
 }
 
-function getStageState(stage: Stage, current: ProgressData['stage']): 'pending' | 'active' | 'completed' {
+function getStageState(
+  stage: Stage,
+  current: ProgressData['stage'],
+  stages: readonly Stage[]
+): 'pending' | 'active' | 'completed' {
   if (current === 'complete') return 'completed'
-  const currentIdx = STAGES.indexOf(current as Stage)
-  const stageIdx = STAGES.indexOf(stage)
+  const currentIdx = stages.indexOf(current as Stage)
+  const stageIdx = stages.indexOf(stage)
   if (currentIdx < 0) return 'pending'
   if (stageIdx < currentIdx) return 'completed'
   if (stageIdx === currentIdx) return 'active'
@@ -49,22 +55,29 @@ function computeEta(elapsed_ms: number, processed: number, total: number): strin
   return `ETA ${etaSec}s`
 }
 
-export function AnalysisProgress({ data }: { data: ProgressData }) {
+export function AnalysisProgress({
+  data,
+  showRecommendationStage = false
+}: {
+  data: ProgressData
+  showRecommendationStage?: boolean
+}) {
+  const stages = showRecommendationStage ? STAGES_WITH_RECOMMENDATION : BASE_STAGES
   const counts = data.stage === 'embedding' ? parseEmbeddingCounts(data.message) : null
   const eta = counts ? computeEta(data.elapsed_ms, counts.processed, counts.total) : null
 
   return (
     <div className="analysis-progress">
       <div className="progress-steps">
-        {STAGES.map((stage, i) => {
-          const state = getStageState(stage, data.stage)
+        {stages.map((stage, i) => {
+          const state = getStageState(stage, data.stage, stages)
           return (
             <div key={stage} className={`progress-step ${state}`}>
               <span className="step-icon">
                 {state === 'completed' ? '✓' : state === 'active' ? '●' : '○'}
               </span>
               <span className="step-label">{STAGE_LABELS[stage]}</span>
-              {i < STAGES.length - 1 && <span className="step-arrow">→</span>}
+              {i < stages.length - 1 && <span className="step-arrow">→</span>}
             </div>
           )
         })}
@@ -99,7 +112,7 @@ export function AnalysisProgress({ data }: { data: ProgressData }) {
         </div>
       )}
 
-      {(data.stage === 'clustering' || data.stage === 'keywords') && (
+      {(data.stage === 'recommendation' || data.stage === 'clustering' || data.stage === 'keywords') && (
         <div className="progress-detail">
           <span className="progress-spinner" />
           <span>{data.message}</span>
