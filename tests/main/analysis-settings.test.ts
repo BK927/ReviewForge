@@ -64,4 +64,10 @@ describe('resolveAnalysisConfig', () => {
     })
     expect((config.filter as Record<string, unknown>)).not.toHaveProperty('ignored')
   })
+
+  it('clamps manual topic counts into the supported range', () => {
+    const config = resolveAnalysisConfig({ topicCountMode: 'manual', n_topics: 999 }, { tier: '0' }, 0)
+
+    expect(config).toMatchObject({ tier: 0, topicCountMode: 'manual', n_topics: 20 })
+  })
 })

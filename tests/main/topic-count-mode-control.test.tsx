@@ -4,6 +4,21 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { TopicCountModeControl } from '../../src/renderer/src/components/TopicCountModeControl'
 
 describe('TopicCountModeControl', () => {
+  it('shows a loading hint while the analysis tier is still being resolved', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TopicCountModeControl, {
+        tier: null,
+        mode: 'auto',
+        nTopics: 8,
+        onModeChange: () => {},
+        onNTopicsChange: () => {}
+      })
+    )
+
+    expect(html).toContain('Checking analysis tier')
+    expect(html).not.toContain('Manual')
+  })
+
   it('shows auto and manual modes for Tier 0, with manual input disabled in auto mode', () => {
     const html = renderToStaticMarkup(
       React.createElement(TopicCountModeControl, {

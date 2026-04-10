@@ -44,7 +44,7 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
   const [expandedTopic, setExpandedTopic] = useState<string | null>(null)
   const [nTopics, setNTopics] = useState(8)
   const [topicCountMode, setTopicCountMode] = useState<TopicCountMode>('auto')
-  const [analysisTier, setAnalysisTier] = useState(0)
+  const [analysisTier, setAnalysisTier] = useState<number | null>(null)
   const [showRecommendationStage, setShowRecommendationStage] = useState(false)
   const [reviewLimit, setReviewLimit] = useState<'all' | number>('all')
   const [totalReviews, setTotalReviews] = useState(0)
@@ -53,6 +53,8 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
     setResult(null)
     setError(null)
     setProgress({ stage: 'idle', percent: 0, message: '', elapsed_ms: 0 })
+    setAnalysisTier(null)
+    setTopicCountMode('auto')
     onAnalysisComplete(null)
     api.getGameStats(appId).then((stats: any) => {
       setTotalReviews(stats.total_collected ?? 0)
@@ -111,9 +113,11 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
 
   const effectiveCount = reviewLimit === 'all' ? totalReviews : Math.min(reviewLimit, totalReviews)
   const effectiveMinutes = estimateLocalAnalysisMinutes(effectiveCount)
-  const normalizedTopicCountMode: TopicCountMode = analysisTier >= 1 ? 'auto' : topicCountMode
+  const normalizedTopicCountMode: TopicCountMode = analysisTier !== null && analysisTier >= 1 ? 'auto' : topicCountMode
 
   const runAnalysis = async () => {
+    if (analysisTier === null) return
+
     setLoading(true)
     setError(null)
     setShowRecommendationStage(analysisTier === 0 && normalizedTopicCountMode === 'auto')
@@ -164,7 +168,7 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
             <option value="10000">10,000</option>
           </select>
         </label>
-        <button onClick={runAnalysis} disabled={loading}>
+        <button onClick={runAnalysis} disabled={loading || analysisTier === null}>
           {loading ? 'Analyzing...' : 'Run Analysis'}
         </button>
       </div>

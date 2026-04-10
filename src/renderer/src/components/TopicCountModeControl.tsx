@@ -1,7 +1,7 @@
 export type TopicCountMode = 'auto' | 'manual'
 
 interface TopicCountModeControlProps {
-  tier: number
+  tier: number | null
   mode: TopicCountMode
   nTopics: number
   disabled?: boolean
@@ -17,6 +17,10 @@ export function TopicCountModeControl({
   onModeChange,
   onNTopicsChange
 }: TopicCountModeControlProps) {
+  if (tier === null) {
+    return <div className="topic-count-hint">Checking analysis tier...</div>
+  }
+
   if (tier >= 1) {
     return (
       <div className="topic-count-mode-control locked">

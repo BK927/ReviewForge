@@ -93,6 +93,7 @@ export function resolveAnalysisConfig(
   const tier = resolveAnalysisTier(config.tier, settings, detectedTier)
   const topicCountMode = resolveTopicCountMode(config, tier)
   const nTopics = parsePositiveInteger(config.n_topics, 2)
+  const normalizedTopicCount = nTopics === null ? null : Math.min(nTopics, 20)
   const maxReviews = parsePositiveInteger(config.maxReviews)
   const filter = normalizeFilter(config.filter)
 
@@ -102,8 +103,8 @@ export function resolveAnalysisConfig(
     topicCountMode
   }
 
-  if (topicCountMode === 'manual' && nTopics !== null) {
-    normalizedConfig.n_topics = nTopics
+  if (topicCountMode === 'manual' && normalizedTopicCount !== null) {
+    normalizedConfig.n_topics = normalizedTopicCount
   } else {
     delete normalizedConfig.n_topics
   }
