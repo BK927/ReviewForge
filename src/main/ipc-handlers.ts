@@ -1,10 +1,10 @@
 import { ipcMain, BrowserWindow, dialog, app } from 'electron'
 import Database from 'better-sqlite3'
-import { insertGame, getGame, getAllGames, deleteGame, getGameStats, upsertReviews, getReviews, saveAnalysisCache } from './db'
-import crypto from 'crypto'
+import { insertGame, getGame, getAllGames, deleteGame, getGameStats, upsertReviews, getReviews } from './db'
 import { parseAppId, fetchAllReviews, fetchGameName, transformQuerySummary } from './steam-api'
 import { SidecarManager } from './sidecar'
-import { resolveAnalysisConfig, type SavedSettings } from './analysis-settings'
+import { resolveAnalysisConfig, type NormalizedAnalysisConfig, type SavedSettings } from './analysis-settings'
+import { getCachedAnalysisResult, saveCachedAnalysisResult } from './analysis-cache'
 import fs from 'fs'
 import path from 'path'
 
@@ -69,7 +69,17 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
     return getReviews(db, appId, filter as Parameters<typeof getReviews>[2])
   })
 
-  ipcMain.handle('analysis:get-cached', (_event, appId: number) => {
+  ipcMain.handle('analysis:get-cached', async (_event, appId: number, config?: Record<string, unknown>) => {
+    if (config) {
+      const settings = loadSettings()
+      const detectedTier = settings.tier === 'auto'
+        ? Number(((await sidecar.send('detect_gpu')) as { recommended_tier?: unknown })?.recommended_tier ?? 0)
+        : 0
+      const analysisConfig = resolveAnalysisConfig(config, settings, detectedTier)
+
+      return getCachedAnalysisResult(db, appId, 'topics', analysisConfig)
+    }
+
     // Return the most recent cached result for this app, regardless of config
     const row = db.prepare('SELECT result_json FROM analysis_cache WHERE app_id = ? AND analysis_type = ? ORDER BY created_at DESC LIMIT 1').get(appId, 'topics') as { result_json: string } | undefined
     if (!row) return null
@@ -96,7 +106,12 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
     const detectedTier = settings.tier === 'auto'
       ? Number(((await sidecar.send('detect_gpu')) as { recommended_tier?: unknown })?.recommended_tier ?? 0)
       : 0
-    const analysisConfig = resolveAnalysisConfig(config, settings, detectedTier)
+    const analysisConfig: NormalizedAnalysisConfig = resolveAnalysisConfig(config, settings, detectedTier)
+    const cachedResult = getCachedAnalysisResult(db, appId, 'topics', analysisConfig)
+
+    if (cachedResult) {
+      return cachedResult
+    }
 
     await sendProgress('Loading reviews from database...')
 
@@ -121,10 +136,7 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
     }) as Record<string, unknown>
     const finalResult = { ...result, total_available: totalAvailable, sampled: reviews.length < totalAvailable }
 
-    // Persist to DB cache
-    const configHash = crypto.createHash('md5').update(JSON.stringify({ n_topics: analysisConfig.n_topics, maxReviews: analysisConfig.maxReviews })).digest('hex')
-    const langFilter = (analysisConfig.filter as Record<string, unknown> | undefined)?.language as string ?? 'all'
-    saveAnalysisCache(db, appId, 'topics', langFilter, configHash, JSON.stringify(finalResult))
+    saveCachedAnalysisResult(db, appId, 'topics', analysisConfig, finalResult)
 
     return finalResult
   })
