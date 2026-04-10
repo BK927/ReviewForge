@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { subscribeToProgress } from './progress-subscription'
 
 const api = {
   // Games
@@ -21,10 +22,7 @@ const api = {
   exportMarkdown: (appId: number, filter: Record<string, unknown>) => ipcRenderer.invoke('export:markdown', appId, filter),
 
   // Events
-  onProgress: (callback: (data: unknown) => void) => {
-    ipcRenderer.on('progress', (_event, data) => callback(data))
-    return () => ipcRenderer.removeAllListeners('progress')
-  },
+  onProgress: (callback: (data: unknown) => void) => subscribeToProgress(ipcRenderer, callback),
 
   // Settings
   getSettings: () => ipcRenderer.invoke('settings:get'),

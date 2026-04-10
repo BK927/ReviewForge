@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useApi } from '../hooks/useApi'
 import { AnalysisProgress, ProgressData } from './AnalysisProgress'
+import { estimateLocalAnalysisMinutes } from '../lib/analysis-timing'
 
 interface Topic {
   id: number
@@ -57,7 +58,7 @@ export function TopicAnalysis({ appId }: { appId: number }) {
   }, [appId])
 
   const effectiveCount = reviewLimit === 'all' ? totalReviews : Math.min(reviewLimit, totalReviews)
-  const effectiveMinutes = Math.ceil(effectiveCount * 0.66 / 64 / 60)
+  const effectiveMinutes = estimateLocalAnalysisMinutes(effectiveCount)
 
   const runAnalysis = async () => {
     setLoading(true)

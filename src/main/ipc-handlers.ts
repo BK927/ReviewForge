@@ -3,10 +3,20 @@ import Database from 'better-sqlite3'
 import { insertGame, getGame, getAllGames, deleteGame, getGameStats, upsertReviews, getReviews } from './db'
 import { parseAppId, fetchAllReviews, fetchGameName, transformQuerySummary } from './steam-api'
 import { SidecarManager } from './sidecar'
+import { resolveAnalysisConfig, type SavedSettings } from './analysis-settings'
 import fs from 'fs'
 import path from 'path'
 
 export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManager, getMainWindow: () => BrowserWindow | null): void {
+  const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+
+  const loadSettings = (): SavedSettings & { apiProvider?: string; apiKey?: string } => {
+    try {
+      return JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+    } catch {
+      return { tier: 'auto', apiProvider: 'none', apiKey: '' }
+    }
+  }
 
   ipcMain.handle('game:add', async (_event, input: string) => {
     const appId = parseAppId(input)
@@ -63,9 +73,24 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
   })
 
   ipcMain.handle('analysis:run', async (_event, appId: number, config: Record<string, unknown>) => {
-    let reviews = getReviews(db, appId, config.filter as Parameters<typeof getReviews>[2])
+    const win = getMainWindow()
+    const sendProgress = async (message: string): Promise<void> => {
+      win?.webContents.send('progress', { type: 'analysis', appId, stage: 'idle', percent: 0, message })
+      // Yield event loop so the queued IPC message is actually delivered before blocking work
+      await new Promise(resolve => setImmediate(resolve))
+    }
+
+    const settings = loadSettings()
+    const detectedTier = settings.tier === 'auto'
+      ? Number(((await sidecar.send('detect_gpu')) as { recommended_tier?: unknown })?.recommended_tier ?? 0)
+      : 0
+    const analysisConfig = resolveAnalysisConfig(config, settings, detectedTier)
+
+    await sendProgress('Loading reviews from database...')
+
+    let reviews = getReviews(db, appId, analysisConfig.filter as Parameters<typeof getReviews>[2])
     const totalAvailable = reviews.length
-    const maxReviews = config.maxReviews as number | undefined
+    const maxReviews = analysisConfig.maxReviews as number | undefined
     if (maxReviews && reviews.length > maxReviews) {
       reviews = reviews.slice(0, maxReviews)
     }
@@ -76,8 +101,10 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
       language: r.language,
       playtime: r.playtime_at_review
     }))
-    const win = getMainWindow()
-    const result = await sidecar.send('analyze', { reviews: reviewData, config }, (progress) => {
+
+    await sendProgress(`Sending ${reviewData.length.toLocaleString()} reviews to analysis engine...`)
+
+    const result = await sidecar.send('analyze', { reviews: reviewData, config: analysisConfig }, (progress) => {
       win?.webContents.send('progress', { type: 'analysis', appId, ...progress })
     }) as Record<string, unknown>
     return { ...result, total_available: totalAvailable, sampled: reviews.length < totalAvailable }
@@ -121,14 +148,8 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
     return result.filePath
   })
 
-  const settingsPath = path.join(app.getPath('userData'), 'settings.json')
-
   ipcMain.handle('settings:get', () => {
-    try {
-      return JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
-    } catch {
-      return { tier: 'auto', apiProvider: 'none', apiKey: '' }
-    }
+    return loadSettings()
   })
 
   ipcMain.handle('settings:save', (_event, settings: Record<string, unknown>) => {
