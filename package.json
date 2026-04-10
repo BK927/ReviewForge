@@ -6,20 +6,22 @@
   "author": "",
   "homepage": "https://electron-vite.org",
   "scripts": {
+    "native:prepare:node": "node scripts/prepare-native-deps.js node",
+    "native:prepare:electron": "node scripts/prepare-native-deps.js electron",
     "format": "prettier --write .",
     "lint": "eslint . --ext .js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "pnpm typecheck:node && pnpm typecheck:web",
-    "start": "electron-vite preview",
-    "dev": "electron-vite dev",
-    "build": "pnpm typecheck && electron-vite build",
-    "postinstall": "electron-builder install-app-deps",
+    "start": "node scripts/prepare-native-deps.js electron && electron-vite preview",
+    "dev": "node scripts/prepare-native-deps.js electron && electron-vite dev",
+    "build": "node scripts/prepare-native-deps.js electron && pnpm typecheck && electron-vite build",
+    "postinstall": "node scripts/prepare-native-deps.js electron",
     "build:unpack": "pnpm build && electron-builder --dir",
     "build:win": "pnpm build && electron-builder --win",
     "build:mac": "pnpm build && electron-builder --mac",
     "build:linux": "pnpm build && electron-builder --linux",
-    "test": "vitest run"
+    "test": "node scripts/prepare-native-deps.js node && vitest run"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
