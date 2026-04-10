@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useApi } from '../hooks/useApi'
-import { TopicsSkeleton } from './Skeleton'
+import { AnalysisProgress, ProgressData } from './AnalysisProgress'
 
 interface Topic {
   id: number
@@ -26,7 +26,7 @@ export function TopicAnalysis({ appId }: { appId: number }) {
   const api = useApi()
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [loading, setLoading] = useState(false)
-  const [progress, setProgress] = useState('')
+  const [progress, setProgress] = useState<ProgressData>({ stage: 'idle', percent: 0, message: '', elapsed_ms: 0 })
   const [error, setError] = useState<string | null>(null)
   const [expandedTopic, setExpandedTopic] = useState<string | null>(null)
   const [nTopics, setNTopics] = useState(8)
@@ -36,7 +36,7 @@ export function TopicAnalysis({ appId }: { appId: number }) {
   useEffect(() => {
     setResult(null)
     setError(null)
-    setProgress('')
+    setProgress({ stage: 'idle', percent: 0, message: '', elapsed_ms: 0 })
     api.getGameStats(appId).then((stats: any) => {
       setTotalReviews(stats.total_collected ?? 0)
     })
@@ -45,7 +45,12 @@ export function TopicAnalysis({ appId }: { appId: number }) {
   useEffect(() => {
     const cleanup = api.onProgress((data: any) => {
       if (data.type === 'analysis' && data.appId === appId) {
-        setProgress(data.message ?? '')
+        setProgress({
+          stage: data.stage ?? 'embedding',
+          percent: data.percent ?? 0,
+          message: data.message ?? '',
+          elapsed_ms: data.elapsed_ms ?? 0
+        })
       }
     })
     return () => { cleanup() }
@@ -57,7 +62,7 @@ export function TopicAnalysis({ appId }: { appId: number }) {
   const runAnalysis = async () => {
     setLoading(true)
     setError(null)
-    setProgress('Starting analysis...')
+    setProgress({ stage: 'idle', percent: 0, message: 'Starting analysis...', elapsed_ms: 0 })
     try {
       const config: Record<string, unknown> = { n_topics: nTopics }
       if (reviewLimit !== 'all') {
@@ -70,7 +75,7 @@ export function TopicAnalysis({ appId }: { appId: number }) {
       setError(e instanceof Error ? e.message : 'Analysis failed. Check the developer console for details.')
     } finally {
       setLoading(false)
-      setProgress('')
+      setProgress({ stage: 'idle', percent: 0, message: '', elapsed_ms: 0 })
     }
   }
 
@@ -99,7 +104,7 @@ export function TopicAnalysis({ appId }: { appId: number }) {
           </select>
         </label>
         <button onClick={runAnalysis} disabled={loading}>
-          {loading ? progress || 'Analyzing...' : 'Run Analysis'}
+          {loading ? 'Analyzing...' : 'Run Analysis'}
         </button>
       </div>
 
@@ -115,7 +120,7 @@ export function TopicAnalysis({ appId }: { appId: number }) {
         </div>
       )}
 
-      {loading && <TopicsSkeleton />}
+      {loading && <AnalysisProgress data={progress} />}
 
       {result && (
         <div className="analysis-meta">
