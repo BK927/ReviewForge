@@ -16,15 +16,15 @@ def run_analysis(params: dict, msg_id: str) -> dict:
     if not reviews:
         return {"positive_topics": [], "negative_topics": []}
 
-    def progress(pct, msg):
-        sys.stdout.write(format_progress(msg_id, pct, msg) + "\n")
+    def progress(pct, msg, stage=None, elapsed_ms=None):
+        sys.stdout.write(format_progress(msg_id, pct, msg, stage=stage, elapsed_ms=elapsed_ms) + "\n")
         sys.stdout.flush()
 
     # Split by sentiment
     positive = [r for r in reviews if r["voted_up"]]
     negative = [r for r in reviews if not r["voted_up"]]
 
-    progress(5, "Generating embeddings...")
+    progress(5, "Generating embeddings...", stage="embedding")
 
     all_texts = [r["text"] for r in reviews]
     emb_result = generate_embeddings({"texts": all_texts, "tier": tier}, msg_id)
@@ -37,7 +37,7 @@ def run_analysis(params: dict, msg_id: str) -> dict:
     pos_embeddings = all_embeddings[pos_indices] if pos_indices else np.array([])
     neg_embeddings = all_embeddings[neg_indices] if neg_indices else np.array([])
 
-    progress(60, "Clustering reviews...")
+    progress(60, "Clustering reviews...", stage="clustering")
 
     method = "hdbscan" if tier >= 1 else "kmeans"
 
@@ -46,14 +46,14 @@ def run_analysis(params: dict, msg_id: str) -> dict:
         method, n_topics, tier
     ) if positive else []
 
-    progress(80, "Extracting keywords...")
+    progress(80, "Extracting keywords...", stage="keywords")
 
     neg_topics = _analyze_group(
         [r["text"] for r in negative], neg_embeddings,
         method, n_topics, tier
     ) if negative else []
 
-    progress(100, "Analysis complete")
+    progress(100, "Analysis complete", stage="complete")
 
     return {
         "model": emb_result["model"],
