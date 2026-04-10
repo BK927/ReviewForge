@@ -61,10 +61,10 @@ export function AnalysisProgress({ data }: { data: ProgressData }) {
           return (
             <div key={stage} className={`progress-step ${state}`}>
               <span className="step-icon">
-                {state === 'completed' ? '\u2713' : state === 'active' ? '\u25CF' : '\u25CB'}
+                {state === 'completed' ? '✓' : state === 'active' ? '●' : '○'}
               </span>
               <span className="step-label">{STAGE_LABELS[stage]}</span>
-              {i < STAGES.length - 1 && <span className="step-arrow">\u2192</span>}
+              {i < STAGES.length - 1 && <span className="step-arrow">→</span>}
             </div>
           )
         })}

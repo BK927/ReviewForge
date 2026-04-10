@@ -2,11 +2,13 @@ import sys
 import io
 import traceback
 
-# Ensure UTF-8 for stdin/stdout on Windows (cp949 default can't encode multilingual reviews)
+# Ensure UTF-8 for stdin/stdout/stderr on Windows (cp949 default can't encode multilingual text)
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 if sys.stdin.encoding != 'utf-8':
     sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 from protocol import parse_message, format_result, format_error
 from gpu_detect import detect_gpu
