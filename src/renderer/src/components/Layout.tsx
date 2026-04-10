@@ -104,7 +104,7 @@ export function Layout({ children }: Props) {
         </nav>
 
         <div className="tab-content">
-          <div className="tab-content-inner" key={compareMode ? 'compare' : activeTab}>
+          <div className="tab-content-inner">
             {compareMode && compareIds.length === 2 ? (
               <CompareView appIds={compareIds as [number, number]} />
             ) : compareMode ? (

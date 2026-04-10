@@ -11,13 +11,22 @@ export default function App() {
         if (!appId) {
           return <div className="empty-state">Add a game from the sidebar to get started</div>
         }
-        switch (activeTab) {
-          case 'dashboard': return <Dashboard appId={appId} />
-          case 'topics': return <TopicAnalysis appId={appId} />
-          case 'segments': return <SegmentAnalysis appId={appId} />
-          case 'export': return <ExportPanel appId={appId} />
-          default: return null
-        }
+        return (
+          <>
+            <div style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}>
+              <Dashboard appId={appId} />
+            </div>
+            <div style={{ display: activeTab === 'topics' ? 'block' : 'none' }}>
+              <TopicAnalysis appId={appId} />
+            </div>
+            <div style={{ display: activeTab === 'segments' ? 'block' : 'none' }}>
+              <SegmentAnalysis appId={appId} />
+            </div>
+            <div style={{ display: activeTab === 'export' ? 'block' : 'none' }}>
+              <ExportPanel appId={appId} />
+            </div>
+          </>
+        )
       }}
     </Layout>
   )

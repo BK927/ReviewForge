@@ -34,6 +34,9 @@ export function TopicAnalysis({ appId }: { appId: number }) {
   const [totalReviews, setTotalReviews] = useState(0)
 
   useEffect(() => {
+    setResult(null)
+    setError(null)
+    setProgress('')
     api.getGameStats(appId).then((stats: any) => {
       setTotalReviews(stats.total_collected ?? 0)
     })
