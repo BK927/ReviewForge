@@ -8,6 +8,7 @@ from clustering import cluster_reviews
 
 MAX_SAMPLES_PER_GROUP = 600
 ELIGIBLE_GROUP_MIN_SIZE = 20
+MIN_SEPARATION_THRESHOLD = 0.05
 RUN_CONFIGS = (
     {"seed": 11, "sample_ratio": 1.0},
     {"seed": 23, "sample_ratio": 1.0},
@@ -22,58 +23,109 @@ def recommend_topic_count(
     positive_embeddings: np.ndarray,
     negative_embeddings: np.ndarray,
 ) -> dict:
+    """Recommend topic count independently for positive and negative groups."""
     positive_embeddings = np.asarray(positive_embeddings)
     negative_embeddings = np.asarray(negative_embeddings)
-    total_reviews = int(len(positive_embeddings) + len(negative_embeddings))
 
-    group_inputs = {
-        "positive": positive_embeddings,
-        "negative": negative_embeddings,
-    }
-    group_evaluations = {}
-    for group_name, embeddings in group_inputs.items():
-        sampled = _sample_group_embeddings(embeddings, seed=17 if group_name == "positive" else 29)
-        if sampled is None:
-            group_evaluations[group_name] = {
-                "sample_count": 0,
-                "weight": len(embeddings),
-                "candidate_scores": {},
-            }
-            continue
-
-        sample_vectors, sample_indices = sampled
-        candidate_scores = _evaluate_group_candidates(sample_vectors, sample_indices)
-        group_evaluations[group_name] = {
-            "sample_count": len(sample_vectors),
-            "weight": len(embeddings),
-            "candidate_scores": candidate_scores,
-        }
-
-    aggregate_scores = _aggregate_group_scores(group_evaluations)
-    tested_candidates = sorted(aggregate_scores)
-    if not tested_candidates:
-        return _fallback_result(total_reviews)
-
-    effective_k, winning_score, margin = _pick_winning_k(aggregate_scores)
-    confidence = _confidence_from_scores(winning_score, margin)
+    pos_result = _recommend_for_group(positive_embeddings, seed=17)
+    neg_result = _recommend_for_group(negative_embeddings, seed=29)
 
     return {
-        "effective_k": effective_k,
-        "confidence": confidence,
-        "reason": DEFAULT_REASON,
+        "positive_k": pos_result["k"],
+        "negative_k": neg_result["k"],
+        "positive_confidence": pos_result["confidence"],
+        "negative_confidence": neg_result["confidence"],
+        "positive_reason": pos_result["reason"],
+        "negative_reason": neg_result["reason"],
         "details": {
-            "tested_candidates": tested_candidates,
+            "tested_candidates": {
+                "positive": pos_result["tested_candidates"],
+                "negative": neg_result["tested_candidates"],
+            },
             "per_group_sample_counts": {
-                name: values["sample_count"] for name, values in group_evaluations.items()
+                "positive": pos_result["sample_count"],
+                "negative": neg_result["sample_count"],
             },
-            "winning_summary": {
-                "k": effective_k,
-                "score": round(winning_score, 4),
-                "margin": round(margin, 4),
-            },
-            "used_fallback": False,
+            "positive_summary": pos_result["winning_summary"],
+            "negative_summary": neg_result["winning_summary"],
+            "used_fallback": pos_result["used_fallback"] and neg_result["used_fallback"],
         },
     }
+
+
+def _recommend_for_group(embeddings: np.ndarray, seed: int) -> dict:
+    """Recommend k for a single sentiment group."""
+    if len(embeddings) < ELIGIBLE_GROUP_MIN_SIZE:
+        k = _fallback_k(len(embeddings))
+        return {
+            "k": k,
+            "confidence": "low",
+            "reason": FALLBACK_REASON,
+            "tested_candidates": [],
+            "sample_count": 0,
+            "winning_summary": {"k": k, "score": 0.0, "margin": 0.0},
+            "used_fallback": True,
+        }
+
+    sampled = _sample_group_embeddings(embeddings, seed)
+    if sampled is None:
+        k = _fallback_k(len(embeddings))
+        return {
+            "k": k,
+            "confidence": "low",
+            "reason": FALLBACK_REASON,
+            "tested_candidates": [],
+            "sample_count": 0,
+            "winning_summary": {"k": k, "score": 0.0, "margin": 0.0},
+            "used_fallback": True,
+        }
+
+    sample_vectors, sample_indices = sampled
+    candidate_scores = _evaluate_group_candidates(sample_vectors, sample_indices)
+
+    if not candidate_scores:
+        k = _fallback_k(len(embeddings))
+        return {
+            "k": k,
+            "confidence": "low",
+            "reason": FALLBACK_REASON,
+            "tested_candidates": [],
+            "sample_count": len(sample_vectors),
+            "winning_summary": {"k": k, "score": 0.0, "margin": 0.0},
+            "used_fallback": True,
+        }
+
+    max_separation = max(m["separation_median"] for m in candidate_scores.values())
+    if max_separation < MIN_SEPARATION_THRESHOLD:
+        k = _fallback_k(len(embeddings))
+        return {
+            "k": k,
+            "confidence": "low",
+            "reason": FALLBACK_REASON,
+            "tested_candidates": sorted(candidate_scores),
+            "sample_count": len(sample_vectors),
+            "winning_summary": {"k": k, "score": 0.0, "margin": 0.0},
+            "used_fallback": True,
+        }
+
+    raw_scores = {k_val: m["group_score"] for k_val, m in candidate_scores.items()}
+    normalized = _normalize_scores(raw_scores)
+    k, score, margin = _pick_winning_k(normalized)
+    confidence = _confidence_from_scores(score, margin)
+
+    return {
+        "k": k,
+        "confidence": confidence,
+        "reason": DEFAULT_REASON,
+        "tested_candidates": sorted(candidate_scores),
+        "sample_count": len(sample_vectors),
+        "winning_summary": {"k": k, "score": round(score, 4), "margin": round(margin, 4)},
+        "used_fallback": False,
+    }
+
+
+def _fallback_k(total: int) -> int:
+    return max(2, min(8, int(round(math.sqrt(max(total, 1)) / 2))))
 
 
 def _sample_group_embeddings(embeddings: np.ndarray, seed: int) -> tuple[np.ndarray, np.ndarray] | None:
@@ -213,31 +265,6 @@ def _pairwise_stability_scores(run_results: list[dict]) -> list[float]:
     return stability_scores
 
 
-def _aggregate_group_scores(group_evaluations: dict[str, dict]) -> dict[int, float]:
-    aggregate_scores = {}
-    total_weight = sum(
-        values["weight"]
-        for values in group_evaluations.values()
-        if values["candidate_scores"]
-    )
-    if total_weight == 0:
-        return aggregate_scores
-
-    for values in group_evaluations.values():
-        candidate_scores = values["candidate_scores"]
-        if not candidate_scores:
-            continue
-
-        normalized_scores = _normalize_scores({
-            k: metrics["group_score"] for k, metrics in candidate_scores.items()
-        })
-        weight = values["weight"] / total_weight
-        for candidate_k, score in normalized_scores.items():
-            aggregate_scores[candidate_k] = aggregate_scores.get(candidate_k, 0.0) + (score * weight)
-
-    return aggregate_scores
-
-
 def _normalize_scores(scores: dict[int, float]) -> dict[int, float]:
     if not scores:
         return {}
@@ -257,7 +284,7 @@ def _normalize_scores(scores: dict[int, float]) -> dict[int, float]:
 def _pick_winning_k(scores: dict[int, float]) -> tuple[int, float, float]:
     ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
     top_k, top_score = ranked[0]
-    contenders = [item for item in ranked if (top_score - item[1]) < 0.03]
+    contenders = [item for item in ranked if (top_score - item[1]) < 0.01]
     winning_k, winning_score = min(contenders, key=lambda item: item[0])
     next_best_score = max(
         (score for candidate_k, score in ranked if candidate_k != winning_k),
@@ -272,22 +299,3 @@ def _confidence_from_scores(winning_score: float, margin: float) -> str:
     if winning_score >= 0.45 or margin >= 0.05:
         return "medium"
     return "low"
-
-
-def _fallback_result(total_reviews: int) -> dict:
-    effective_k = max(2, min(8, int(round(math.sqrt(max(total_reviews, 1)) / 2))))
-    return {
-        "effective_k": effective_k,
-        "confidence": "low",
-        "reason": FALLBACK_REASON,
-        "details": {
-            "tested_candidates": [],
-            "per_group_sample_counts": {"positive": 0, "negative": 0},
-            "winning_summary": {
-                "k": effective_k,
-                "score": 0.0,
-                "margin": 0.0,
-            },
-            "used_fallback": True,
-        },
-    }
