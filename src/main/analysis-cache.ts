@@ -61,7 +61,9 @@ export function buildAnalysisCacheIdentity(config: NormalizedAnalysisConfig): An
     tier: config.tier,
     topicCountMode: config.topicCountMode,
     maxReviews: config.maxReviews ?? null,
-    filter: activeFilters
+    filter: activeFilters,
+    min_review_words: config.min_review_words,
+    merge_threshold: config.merge_threshold
   }
 
   if (config.topicCountMode === 'manual' && typeof config.n_topics === 'number') {

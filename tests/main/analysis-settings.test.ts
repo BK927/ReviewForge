@@ -70,4 +70,21 @@ describe('resolveAnalysisConfig', () => {
 
     expect(config).toMatchObject({ tier: 0, topicCountMode: 'manual', n_topics: 20 })
   })
+
+  it('resolveAnalysisConfig sets default min_review_words and merge_threshold', () => {
+    const config = resolveAnalysisConfig({ topicCountMode: 'manual', n_topics: 5 })
+    expect(config.min_review_words).toBe(5)
+    expect(config.merge_threshold).toBe(0.80)
+  })
+
+  it('resolveAnalysisConfig respects custom min_review_words and merge_threshold', () => {
+    const config = resolveAnalysisConfig({
+      topicCountMode: 'manual',
+      n_topics: 5,
+      min_review_words: 3,
+      merge_threshold: 0.90
+    })
+    expect(config.min_review_words).toBe(3)
+    expect(config.merge_threshold).toBe(0.90)
+  })
 })

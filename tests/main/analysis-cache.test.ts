@@ -104,4 +104,16 @@ describe('analysis cache helpers', () => {
 
     expect(getCachedAnalysisResult(db, 730, 'topics', config)).toEqual(result)
   })
+
+  it('cache hash changes when min_review_words changes', () => {
+    const base = buildAnalysisCacheIdentity({ tier: 0, topicCountMode: 'auto', min_review_words: 5, merge_threshold: 0.80 } as NormalizedAnalysisConfig)
+    const changed = buildAnalysisCacheIdentity({ tier: 0, topicCountMode: 'auto', min_review_words: 3, merge_threshold: 0.80 } as NormalizedAnalysisConfig)
+    expect(base.configHash).not.toBe(changed.configHash)
+  })
+
+  it('cache hash changes when merge_threshold changes', () => {
+    const base = buildAnalysisCacheIdentity({ tier: 0, topicCountMode: 'auto', min_review_words: 5, merge_threshold: 0.80 } as NormalizedAnalysisConfig)
+    const changed = buildAnalysisCacheIdentity({ tier: 0, topicCountMode: 'auto', min_review_words: 5, merge_threshold: 0.90 } as NormalizedAnalysisConfig)
+    expect(base.configHash).not.toBe(changed.configHash)
+  })
 })

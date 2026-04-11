@@ -10,6 +10,8 @@ export interface NormalizedAnalysisConfig extends Record<string, unknown> {
   n_topics?: number
   maxReviews?: number
   filter?: Record<string, unknown>
+  min_review_words: number
+  merge_threshold: number
 }
 
 function parseTier(value: unknown): number | null {
@@ -96,11 +98,19 @@ export function resolveAnalysisConfig(
   const normalizedTopicCount = nTopics === null ? null : Math.min(nTopics, 20)
   const maxReviews = parsePositiveInteger(config.maxReviews)
   const filter = normalizeFilter(config.filter)
+  const minReviewWords = parsePositiveInteger(config.min_review_words, 1) ?? 5
+  const mergeThreshold = typeof config.merge_threshold === 'number'
+    && Number.isFinite(config.merge_threshold)
+    && config.merge_threshold >= 0 && config.merge_threshold <= 1.0
+    ? config.merge_threshold
+    : 0.80
 
   const normalizedConfig: NormalizedAnalysisConfig = {
     ...config,
     tier,
-    topicCountMode
+    topicCountMode,
+    min_review_words: minReviewWords,
+    merge_threshold: mergeThreshold
   }
 
   if (topicCountMode === 'manual' && normalizedTopicCount !== null) {
