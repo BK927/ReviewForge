@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
-import { createDb, insertGame, getGame, getAllGames, upsertReviews, getReviews, getGameStats, deleteGame, saveAnalysisCache, getAnalysisCache } from '../../src/main/db'
+import { createDb, insertGame, getGame, getAllGames, upsertReviews, getReviews, getGameStats, deleteGame, saveAnalysisCache, getAnalysisCache, getTopHelpfulReviews } from '../../src/main/db'
 import fs from 'fs'
 import path from 'path'
 
@@ -115,5 +115,26 @@ describe('Database', () => {
 
   it('getAnalysisCache returns null for missing cache', () => {
     expect(getAnalysisCache(db, 730, 'topics', 'nonexistent-hash')).toBeNull()
+  })
+
+  it('getTopHelpfulReviews returns top reviews by weighted_vote_score per sentiment', () => {
+    insertGame(db, { app_id: 730, app_name: 'CS2', review_score: 8, review_score_desc: 'Very Positive', total_positive: 100, total_negative: 20, total_reviews: 120 })
+
+    upsertReviews(db, [
+      { recommendation_id: 'r1', app_id: 730, language: 'english', review_text: 'Amazing', voted_up: 1, timestamp_created: 1000, timestamp_updated: 1000, playtime_at_review: 600, playtime_forever: 1200, steam_purchase: 1, received_for_free: 0, written_during_early_access: 0, primarily_steam_deck: 0, votes_up: 100, votes_funny: 0, weighted_vote_score: 0.95, comment_count: 5 },
+      { recommendation_id: 'r2', app_id: 730, language: 'english', review_text: 'Good', voted_up: 1, timestamp_created: 1001, timestamp_updated: 1001, playtime_at_review: 300, playtime_forever: 500, steam_purchase: 1, received_for_free: 0, written_during_early_access: 0, primarily_steam_deck: 0, votes_up: 50, votes_funny: 0, weighted_vote_score: 0.80, comment_count: 2 },
+      { recommendation_id: 'r3', app_id: 730, language: 'english', review_text: 'Okay', voted_up: 1, timestamp_created: 1002, timestamp_updated: 1002, playtime_at_review: 100, playtime_forever: 200, steam_purchase: 1, received_for_free: 0, written_during_early_access: 0, primarily_steam_deck: 0, votes_up: 5, votes_funny: 0, weighted_vote_score: 0.30, comment_count: 0 },
+      { recommendation_id: 'r4', app_id: 730, language: 'english', review_text: 'Terrible', voted_up: 0, timestamp_created: 1003, timestamp_updated: 1003, playtime_at_review: 60, playtime_forever: 60, steam_purchase: 1, received_for_free: 0, written_during_early_access: 0, primarily_steam_deck: 0, votes_up: 80, votes_funny: 0, weighted_vote_score: 0.90, comment_count: 3 },
+      { recommendation_id: 'r5', app_id: 730, language: 'english', review_text: 'Bad', voted_up: 0, timestamp_created: 1004, timestamp_updated: 1004, playtime_at_review: 30, playtime_forever: 30, steam_purchase: 1, received_for_free: 0, written_during_early_access: 0, primarily_steam_deck: 0, votes_up: 10, votes_funny: 0, weighted_vote_score: 0.40, comment_count: 0 },
+    ])
+
+    const topPositive = getTopHelpfulReviews(db, 730, true, 2)
+    expect(topPositive).toHaveLength(2)
+    expect(topPositive[0].recommendation_id).toBe('r1')
+    expect(topPositive[1].recommendation_id).toBe('r2')
+
+    const topNegative = getTopHelpfulReviews(db, 730, false, 1)
+    expect(topNegative).toHaveLength(1)
+    expect(topNegative[0].recommendation_id).toBe('r4')
   })
 })

@@ -225,3 +225,9 @@ export function getAnalysisCache(db: Database.Database, appId: number, analysisT
   const row = db.prepare('SELECT result_json FROM analysis_cache WHERE app_id = ? AND analysis_type = ? AND config_hash = ?').get(appId, analysisType, configHash) as { result_json: string } | undefined
   return row?.result_json ?? null
 }
+
+export function getTopHelpfulReviews(db: Database.Database, appId: number, votedUp: boolean, limit: number = 5): ReviewRecord[] {
+  return db.prepare(
+    'SELECT * FROM reviews WHERE app_id = ? AND voted_up = ? ORDER BY weighted_vote_score DESC LIMIT ?'
+  ).all(appId, votedUp ? 1 : 0, limit) as ReviewRecord[]
+}
