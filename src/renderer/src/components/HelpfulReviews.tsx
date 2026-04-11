@@ -6,7 +6,6 @@ interface HelpfulReview {
   review_text: string
   voted_up: number
   votes_up: number
-  weighted_vote_score: number
   playtime_at_review: number
 }
 
@@ -24,6 +23,9 @@ export function HelpfulReviews({ appId }: { appId: number }) {
     ]).then(([pos, neg]) => {
       setPositive(pos)
       setNegative(neg)
+    }).catch(err => {
+      console.error('Failed to load helpful reviews:', err)
+    }).finally(() => {
       setLoading(false)
     })
   }, [appId])
