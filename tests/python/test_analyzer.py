@@ -39,10 +39,14 @@ def _install_common_mocks(monkeypatch, progress_calls, cluster_calls):
         "extract_topic_keywords",
         lambda texts, labels, tier=0, embeddings=None: {0: [("topic", 0.95)]} if texts else {},
     )
+    monkeypatch.setattr(analyzer, "is_short_review", lambda text, language="english", min_words=5: False)
+    monkeypatch.setattr(analyzer, "build_short_review_summary", lambda reviews: {"count": 0, "positive_rate": 0.0, "frequent_phrases": []})
+    monkeypatch.setattr(analyzer, "merge_similar_topics", lambda emb, labels, threshold=0.80: (labels, {"original_topic_count": len(set(labels)), "merged_topic_count": len(set(labels)), "merges": []}))
 
 
 def test_run_analysis_uses_recommendation_for_tier0_auto(monkeypatch):
-    reviews = _make_reviews(3, 3)
+    # 3 positive + 5 negative so negative_k=4 doesn't get capped by min()
+    reviews = _make_reviews(3, 5)
     embeddings = np.array([
         [0.0, 0.0],
         [0.1, 0.1],
@@ -50,6 +54,8 @@ def test_run_analysis_uses_recommendation_for_tier0_auto(monkeypatch):
         [5.0, 5.0],
         [5.1, 5.1],
         [5.2, 5.2],
+        [5.3, 5.3],
+        [5.4, 5.4],
     ])
     progress_calls = []
     cluster_calls = []
@@ -58,22 +64,25 @@ def test_run_analysis_uses_recommendation_for_tier0_auto(monkeypatch):
     monkeypatch.setattr(
         analyzer,
         "generate_embeddings",
-        lambda params, msg_id: {"embeddings": embeddings.tolist(), "model": "test-model"},
+        lambda params, msg_id: {"embeddings": embeddings[:len(params["texts"])].tolist(), "model": "test-model"},
     )
     monkeypatch.setattr(
         analyzer,
         "recommend_topic_count",
         lambda positive_embeddings, negative_embeddings: {
-            "effective_k": 3,
-            "confidence": "high",
-                "reason": "Best balance of separation and stability across tested k values",
-                "details": {
-                    "tested_candidates": [2, 3, 4],
-                    "per_group_sample_counts": {"positive": 3, "negative": 3},
-                    "winning_summary": {"k": 3, "score": 0.71},
-                    "used_fallback": False,
-                },
+            "positive_k": 3,
+            "negative_k": 4,
+            "positive_confidence": "high",
+            "negative_confidence": "medium",
+            "positive_reason": "Best balance of separation and stability across tested k values",
+            "negative_reason": "Best balance of separation and stability across tested k values",
+            "details": {
+                "tested_candidates": [2, 3, 4],
+                "per_group_sample_counts": {"positive": 3, "negative": 3},
+                "winning_summary": {"k": 3, "score": 0.71},
+                "used_fallback": False,
             },
+        },
     )
 
     result = analyzer.run_analysis(
@@ -83,11 +92,13 @@ def test_run_analysis_uses_recommendation_for_tier0_auto(monkeypatch):
 
     assert result["topic_count_mode"] == "auto"
     assert result["requested_k"] is None
-    assert result["effective_k"] == 3
-    assert result["recommendation_confidence"] == "high"
-    assert result["recommendation_reason"] == "Best balance of separation and stability across tested k values"
+    assert result["positive_k"] == 3
+    assert result["negative_k"] == 4
+    assert result["positive_confidence"] == "high"
+    assert result["negative_confidence"] == "medium"
+    assert result["positive_reason"] == "Best balance of separation and stability across tested k values"
     assert result["recommendation_details"]["used_fallback"] is False
-    assert [call["n_clusters"] for call in cluster_calls] == [3, 3]
+    assert [call["n_clusters"] for call in cluster_calls] == [3, 4]
     assert all(call["method"] == "kmeans" for call in cluster_calls)
     assert [stage for _, _, stage in progress_calls] == [
         "embedding",
@@ -123,9 +134,10 @@ def test_run_analysis_uses_requested_k_for_tier0_manual(monkeypatch):
 
     assert result["topic_count_mode"] == "manual"
     assert result["requested_k"] == 5
-    assert result["effective_k"] == 5
-    assert result["recommendation_confidence"] is None
-    assert result["recommendation_reason"] == "Using requested topic count"
+    assert result["positive_k"] == 5
+    assert result["negative_k"] == 5
+    assert result["positive_confidence"] is None
+    assert result["positive_reason"] == "Using requested topic count"
     assert [call["n_clusters"] for call in cluster_calls] == [5, 5]
     assert [stage for _, _, stage in progress_calls] == [
         "embedding",
@@ -165,9 +177,10 @@ def test_run_analysis_skips_recommendation_for_tier1(monkeypatch):
 
     assert result["topic_count_mode"] == "auto"
     assert result["requested_k"] is None
-    assert result["effective_k"] is None
-    assert result["recommendation_confidence"] is None
-    assert result["recommendation_reason"] == "Auto by HDBSCAN"
+    assert result["positive_k"] is None
+    assert result["negative_k"] is None
+    assert result["positive_confidence"] is None
+    assert result["positive_reason"] == "Auto by HDBSCAN"
     assert all(call["method"] == "hdbscan" for call in cluster_calls)
     assert [stage for _, _, stage in progress_calls] == [
         "embedding",
@@ -175,3 +188,47 @@ def test_run_analysis_skips_recommendation_for_tier1(monkeypatch):
         "keywords",
         "complete",
     ]
+
+
+def test_run_analysis_filters_short_reviews(monkeypatch):
+    reviews = [
+        {"text": "good", "voted_up": True, "language": "english"},
+        {"text": "this game has an amazing combat system", "voted_up": True, "language": "english"},
+        {"text": "bad", "voted_up": False, "language": "english"},
+        {"text": "the controls are terrible and unresponsive", "voted_up": False, "language": "english"},
+    ]
+    embeddings = np.array([[0.0, 0.0], [0.1, 0.1], [5.0, 5.0], [5.1, 5.1]])
+    progress_calls = []
+    cluster_calls = []
+
+    _install_common_mocks(monkeypatch, progress_calls, cluster_calls)
+    monkeypatch.setattr(
+        analyzer,
+        "generate_embeddings",
+        lambda params, msg_id: {
+            "embeddings": embeddings[:len(params["texts"])].tolist(),
+            "model": "test-model",
+        },
+    )
+    monkeypatch.setattr(analyzer, "merge_similar_topics", lambda emb, labels, threshold=0.80: (labels, {"original_topic_count": 1, "merged_topic_count": 1, "merges": []}))
+
+    # Override is_short_review to treat single-word texts as short
+    monkeypatch.setattr(
+        analyzer,
+        "is_short_review",
+        lambda text, language="english", min_words=5: len(text.split()) < min_words,
+    )
+    monkeypatch.setattr(
+        analyzer,
+        "build_short_review_summary",
+        lambda reviews: {"count": len(reviews), "positive_rate": 0.0, "frequent_phrases": []},
+    )
+
+    result = analyzer.run_analysis(
+        {"reviews": reviews, "config": {"tier": 0, "topicCountMode": "manual", "n_topics": 2, "min_review_words": 5}},
+        "msg-4",
+    )
+
+    assert "short_review_summary" in result
+    assert result["short_review_summary"]["count"] == 2  # "good" and "bad"
+    assert result["total_reviews"] == 4
