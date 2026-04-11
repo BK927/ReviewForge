@@ -5,6 +5,7 @@ import { useCountUp } from '../hooks/useCountUp'
 import { CollectionProgress } from './CollectionProgress'
 import { getLanguageDisplayName } from '../lib/steam-languages'
 import { DashboardSkeleton } from './Skeleton'
+import { HelpfulReviews } from './HelpfulReviews'
 
 interface GameStats {
   total_collected: number
@@ -166,6 +167,7 @@ export function Dashboard({ appId }: { appId: number }) {
           <ReactECharts option={langOption} style={{ height: 300 }} />
         </div>
       </div>
+      <HelpfulReviews appId={appId} />
     </div>
   )
 }
