@@ -98,3 +98,5 @@ def test_recommend_topic_count_fallback_when_one_group_too_small():
     assert result["positive_k"] >= 2
     assert result["negative_k"] >= 2
     assert result["negative_confidence"] == "low"
+    assert result["details"]["used_fallback"] is True
+    assert result["details"]["negative_used_fallback"] is True

@@ -80,6 +80,8 @@ def test_run_analysis_uses_recommendation_for_tier0_auto(monkeypatch):
                 "tested_candidates": [2, 3, 4],
                 "per_group_sample_counts": {"positive": 3, "negative": 3},
                 "winning_summary": {"k": 3, "score": 0.71},
+                "positive_used_fallback": False,
+                "negative_used_fallback": False,
                 "used_fallback": False,
             },
         },

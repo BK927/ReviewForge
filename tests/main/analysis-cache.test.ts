@@ -15,6 +15,8 @@ function createConfig(overrides: Partial<NormalizedAnalysisConfig> = {}): Normal
     n_topics: 8,
     maxReviews: 500,
     filter: { language: 'english' },
+    min_review_words: 5,
+    merge_threshold: 0.80,
     ...overrides
   }
 }
@@ -71,9 +73,14 @@ describe('analysis cache helpers', () => {
       sampled: true,
       topic_count_mode: 'manual',
       requested_k: 8,
-      effective_k: 8,
-      recommendation_confidence: 'high',
-      recommendation_reason: 'User selected a manual topic count.'
+      positive_k: 8,
+      negative_k: 8,
+      positive_confidence: null,
+      negative_confidence: null,
+      positive_reason: 'Using requested topic count',
+      negative_reason: 'Using requested topic count',
+      short_review_summary: { count: 0, positive_rate: 0.0, frequent_phrases: [] },
+      merge_info: { positive: { original_topic_count: 0, merged_topic_count: 0, merges: [] }, negative: { original_topic_count: 0, merged_topic_count: 0, merges: [] } }
     }
 
     saveCachedAnalysisResult(db, 730, 'topics', config, result)
@@ -91,13 +98,21 @@ describe('analysis cache helpers', () => {
       total_reviews: 400,
       topic_count_mode: 'auto',
       requested_k: null,
-      effective_k: 5,
-      recommendation_confidence: 'medium',
-      recommendation_reason: 'Best balance of separation and stability across tested k values.',
+      positive_k: 3,
+      negative_k: 5,
+      positive_confidence: 'high',
+      negative_confidence: 'medium',
+      positive_reason: 'Best balance of separation and stability across tested k values',
+      negative_reason: 'Best balance of separation and stability across tested k values',
       recommendation_details: {
-        candidate_range: [4, 5, 6],
-        fallback_used: false
-      }
+        tested_candidates: { positive: [2, 3, 4], negative: [3, 4, 5, 6] },
+        per_group_sample_counts: { positive: 200, negative: 200 },
+        positive_summary: { k: 3, score: 0.71, margin: 0.1 },
+        negative_summary: { k: 5, score: 0.65, margin: 0.08 },
+        used_fallback: false
+      },
+      short_review_summary: { count: 5, positive_rate: 0.6, frequent_phrases: [] },
+      merge_info: { positive: { original_topic_count: 4, merged_topic_count: 3, merges: [] }, negative: { original_topic_count: 6, merged_topic_count: 5, merges: [] } }
     }
 
     saveCachedAnalysisResult(db, 730, 'topics', config, result)

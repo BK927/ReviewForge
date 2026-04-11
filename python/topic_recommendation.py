@@ -48,7 +48,9 @@ def recommend_topic_count(
             },
             "positive_summary": pos_result["winning_summary"],
             "negative_summary": neg_result["winning_summary"],
-            "used_fallback": pos_result["used_fallback"] and neg_result["used_fallback"],
+            "positive_used_fallback": pos_result["used_fallback"],
+            "negative_used_fallback": neg_result["used_fallback"],
+            "used_fallback": pos_result["used_fallback"] or neg_result["used_fallback"],
         },
     }
 

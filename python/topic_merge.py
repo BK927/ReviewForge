@@ -85,6 +85,7 @@ def merge_similar_topics(
     new_labels = [remap.get(l, l) for l in new_labels]
 
     for merge in merges_log:
+        merge["from_id"] = remap.get(merge["from_id"], merge["from_id"])
         merge["to_id"] = remap.get(merge["to_id"], merge["to_id"])
 
     return new_labels, {
