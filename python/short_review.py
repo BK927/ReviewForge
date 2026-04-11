@@ -2,12 +2,14 @@ from collections import Counter
 
 CJK_LANGUAGES = {
     "schinese", "tchinese", "japanese", "korean",
-    "koreana",
+    "koreana",  # Steam uses 'koreana' for Korean
 }
+# CJK text uses character count instead of word count; min_chars = min_words * ratio
 CJK_CHAR_THRESHOLD_RATIO = 2
 
 
 def is_short_review(text: str, language: str = "english", min_words: int = 5) -> bool:
+    """Check if a review is too short for meaningful clustering."""
     stripped = text.strip()
     if not stripped:
         return True
@@ -20,6 +22,7 @@ def is_short_review(text: str, language: str = "english", min_words: int = 5) ->
 
 
 def build_short_review_summary(reviews: list[dict]) -> dict:
+    """Build summary stats for short reviews. Each review must have 'text' and 'voted_up' keys."""
     if not reviews:
         return {"count": 0, "positive_rate": 0.0, "frequent_phrases": []}
 
