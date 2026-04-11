@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow, dialog, app } from 'electron'
 import Database from 'better-sqlite3'
-import { insertGame, getGame, getAllGames, deleteGame, getGameStats, upsertReviews, getReviews } from './db'
+import { insertGame, getGame, getAllGames, deleteGame, getGameStats, upsertReviews, getReviews, getTopHelpfulReviews } from './db'
 import { parseAppId, fetchAllReviews, fetchGameName, transformQuerySummary } from './steam-api'
 import { SidecarManager } from './sidecar'
 import { resolveAnalysisConfig, type NormalizedAnalysisConfig, type SavedSettings } from './analysis-settings'
@@ -67,6 +67,10 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
 
   ipcMain.handle('reviews:get', (_event, appId: number, filter?: Record<string, unknown>) => {
     return getReviews(db, appId, filter as Parameters<typeof getReviews>[2])
+  })
+
+  ipcMain.handle('reviews:top-helpful', (_event, appId: number, votedUp: boolean, limit?: number) => {
+    return getTopHelpfulReviews(db, appId, votedUp, limit ?? 5)
   })
 
   ipcMain.handle('analysis:get-cached', async (_event, appId: number, config?: Record<string, unknown>) => {

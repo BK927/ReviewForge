@@ -12,6 +12,7 @@ const api = {
   // Reviews
   fetchReviews: (appId: number) => ipcRenderer.invoke('reviews:fetch', appId),
   getReviews: (appId: number, filter?: Record<string, unknown>) => ipcRenderer.invoke('reviews:get', appId, filter),
+  getTopHelpful: (appId: number, votedUp: boolean, limit?: number) => ipcRenderer.invoke('reviews:top-helpful', appId, votedUp, limit),
 
   // Analysis
   detectGpu: () => ipcRenderer.invoke('analysis:detect-gpu'),
