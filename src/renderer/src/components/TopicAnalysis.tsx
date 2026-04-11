@@ -9,6 +9,7 @@ export interface Topic {
   label: string
   keywords: { word: string; score: number }[]
   review_count: number
+  representative_review?: string
   sample_reviews: string[]
 }
 
@@ -317,6 +318,12 @@ function TopicCard({ topic, type, expanded, onToggle }: {
           </span>
         ))}
       </div>
+      {topic.representative_review && (
+        <div className="representative-review">
+          <span className="representative-label">Representative:</span>
+          <p className="representative-text">{topic.representative_review}</p>
+        </div>
+      )}
       {expanded && (
         <div className="topic-samples">
           <h4>Sample Reviews</h4>
