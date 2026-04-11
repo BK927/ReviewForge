@@ -21,9 +21,20 @@ def run_analysis(params: dict, msg_id: str) -> dict:
     min_review_words = config.get("min_review_words", 5)
     merge_threshold = config.get("merge_threshold", 0.80)
 
+    empty_merge = {"original_topic_count": 0, "merged_topic_count": 0, "merges": []}
+
     if not reviews:
-        return {"positive_topics": [], "negative_topics": [],
-                "short_review_summary": {"count": 0, "positive_rate": 0.0, "frequent_phrases": []}}
+        return {
+            "positive_topics": [], "negative_topics": [],
+            "total_reviews": 0, "positive_count": 0, "negative_count": 0,
+            "tier": tier, "topic_count_mode": topic_count_mode,
+            "requested_k": None, "positive_k": None, "negative_k": None,
+            "positive_confidence": None, "negative_confidence": None,
+            "positive_reason": None, "negative_reason": None,
+            "recommendation_details": None,
+            "short_review_summary": {"count": 0, "positive_rate": 0.0, "frequent_phrases": []},
+            "merge_info": {"positive": empty_merge, "negative": empty_merge},
+        }
 
     if tier >= 1:
         topic_count_mode = "auto"
@@ -47,10 +58,16 @@ def run_analysis(params: dict, msg_id: str) -> dict:
     if len(long_reviews) < 2:
         return {
             "positive_topics": [], "negative_topics": [],
-            "short_review_summary": short_review_summary,
             "total_reviews": len(reviews),
             "positive_count": sum(1 for r in reviews if r["voted_up"]),
             "negative_count": sum(1 for r in reviews if not r["voted_up"]),
+            "tier": tier, "topic_count_mode": topic_count_mode,
+            "requested_k": None, "positive_k": None, "negative_k": None,
+            "positive_confidence": None, "negative_confidence": None,
+            "positive_reason": None, "negative_reason": None,
+            "recommendation_details": None,
+            "short_review_summary": short_review_summary,
+            "merge_info": {"positive": empty_merge, "negative": empty_merge},
         }
 
     # --- Step 2: Split by sentiment ---
