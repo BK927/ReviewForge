@@ -6,7 +6,7 @@ from clustering import cluster_reviews
 from keywords import extract_topic_keywords
 from topic_recommendation import recommend_topic_count
 from short_review import is_short_review, build_short_review_summary
-from topic_merge import merge_similar_topics
+from topic_merge import merge_similar_topics, compute_centroids
 
 
 def run_analysis(params: dict, msg_id: str) -> dict:
@@ -183,20 +183,37 @@ def _analyze_group(texts, embeddings, method, n_topics, tier, merge_threshold=0.
         embeddings=embeddings if tier >= 1 else None
     )
 
+    # Compute centroids for representative review selection
+    centroids = compute_centroids(embeddings, labels)
+
     topics = []
     for topic_id, keywords in sorted(topic_keywords.items()):
-        topic_texts = [t for t, l in zip(texts, labels) if l == topic_id]
+        indices = [i for i, l in enumerate(labels) if l == topic_id]
+        topic_texts = [texts[i] for i in indices]
         # Prefer bigram+ keyphrases for label
         bigram_kws = [kw for kw, _ in keywords if " " in kw]
         unigram_kws = [kw for kw, _ in keywords if " " not in kw]
         label_parts = (bigram_kws + unigram_kws)[:3]
         label = ", ".join(label_parts) if label_parts else f"Topic {topic_id}"
 
+        # Find representative review: closest to centroid by cosine similarity
+        representative_review = topic_texts[0]  # fallback
+        if topic_id in centroids and len(indices) > 0:
+            centroid = centroids[topic_id]
+            topic_embeddings = embeddings[indices]
+            # Cosine similarity: dot(a, b) / (||a|| * ||b||)
+            norms = np.linalg.norm(topic_embeddings, axis=1) * np.linalg.norm(centroid)
+            norms = np.where(norms < 1e-12, 1.0, norms)
+            similarities = topic_embeddings @ centroid / norms
+            best_idx = int(np.argmax(similarities))
+            representative_review = topic_texts[best_idx]
+
         topics.append({
             "id": topic_id,
             "keywords": [{"word": kw, "score": round(sc, 3)} for kw, sc in keywords],
             "label": label,
             "review_count": len(topic_texts),
+            "representative_review": representative_review,
             "sample_reviews": topic_texts[:5]
         })
 

@@ -234,3 +234,50 @@ def test_run_analysis_filters_short_reviews(monkeypatch):
     assert "short_review_summary" in result
     assert result["short_review_summary"]["count"] == 2  # "good" and "bad"
     assert result["total_reviews"] == 4
+
+
+def test_analyze_group_includes_representative_review(monkeypatch):
+    """Each topic should include a representative_review field."""
+    reviews = _make_reviews(6, 0)
+    embeddings = np.array([
+        [0.0, 0.1],
+        [0.1, 0.0],
+        [0.05, 0.05],
+        [5.0, 5.1],
+        [5.1, 5.0],
+        [5.05, 5.05],
+    ])
+    progress_calls = []
+    cluster_calls = []
+
+    _install_common_mocks(monkeypatch, progress_calls, cluster_calls)
+    monkeypatch.setattr(
+        analyzer,
+        "generate_embeddings",
+        lambda params, msg_id: {"embeddings": embeddings[:len(params["texts"])].tolist(), "model": "test-model"},
+    )
+    monkeypatch.setattr(
+        analyzer,
+        "cluster_reviews",
+        lambda vectors, method="kmeans", n_clusters=8, min_cluster_size=5, random_state=42: (
+            [0, 0, 0, 1, 1, 1]
+        ),
+    )
+    monkeypatch.setattr(
+        analyzer,
+        "extract_topic_keywords",
+        lambda texts, labels, tier=0, embeddings=None: {
+            0: [("topic_a", 0.9)],
+            1: [("topic_b", 0.8)],
+        },
+    )
+
+    result = analyzer.run_analysis(
+        {"reviews": reviews, "config": {"tier": 0, "topicCountMode": "manual", "n_topics": 2}},
+        "msg-rep",
+    )
+
+    for topic in result["positive_topics"]:
+        assert "representative_review" in topic, f"Topic {topic['id']} missing representative_review"
+        assert isinstance(topic["representative_review"], str)
+        assert len(topic["representative_review"]) > 0
