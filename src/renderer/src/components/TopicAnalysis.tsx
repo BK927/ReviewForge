@@ -24,10 +24,25 @@ export interface AnalysisResult {
   model: string
   topic_count_mode?: TopicCountMode
   requested_k?: number | null
-  effective_k?: number | null
-  recommendation_confidence?: 'high' | 'medium' | 'low' | null
-  recommendation_reason?: string | null
+  // New: separate k per group (replaces effective_k)
+  positive_k?: number | null
+  negative_k?: number | null
+  positive_confidence?: 'high' | 'medium' | 'low' | null
+  negative_confidence?: 'high' | 'medium' | 'low' | null
+  positive_reason?: string | null
+  negative_reason?: string | null
   recommendation_details?: Record<string, unknown> | null
+  // New: short review summary
+  short_review_summary?: {
+    count: number
+    positive_rate: number
+    frequent_phrases: { phrase: string; count: number }[]
+  }
+  // New: merge info
+  merge_info?: {
+    positive: { original_topic_count: number; merged_topic_count: number; merges: unknown[] }
+    negative: { original_topic_count: number; merged_topic_count: number; merges: unknown[] }
+  }
 }
 
 interface TopicAnalysisProps {
@@ -197,17 +212,29 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
           <span>Model: {result.model}</span>
           <span>Tier: {result.tier}</span>
           <span>Mode: {(result.topic_count_mode ?? normalizedTopicCountMode).toUpperCase()}</span>
-          <span>
-            Effective topics:{' '}
-            {result.tier >= 1
-              ? 'Auto by HDBSCAN'
-              : (result.effective_k ?? result.requested_k ?? nTopics)}
-          </span>
-          {result.recommendation_confidence && (
-            <span>Confidence: {result.recommendation_confidence}</span>
-          )}
-          {result.recommendation_reason && (
-            <span>Reason: {result.recommendation_reason}</span>
+          {result.tier >= 1 ? (
+            <span>Topics: Auto by HDBSCAN</span>
+          ) : result.topic_count_mode === 'auto' ? (
+            <>
+              {result.positive_k != null && (
+                <span>
+                  Positive topics: {result.positive_k}
+                  {result.positive_confidence && (
+                    <> ({result.positive_confidence})</>
+                  )}
+                </span>
+              )}
+              {result.negative_k != null && (
+                <span>
+                  Negative topics: {result.negative_k}
+                  {result.negative_confidence && (
+                    <> ({result.negative_confidence})</>
+                  )}
+                </span>
+              )}
+            </>
+          ) : (
+            <span>Topics: {result.requested_k ?? nTopics}</span>
           )}
           <span>
             Reviews: {result.total_reviews.toLocaleString()}
@@ -216,10 +243,31 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
         </div>
       )}
 
+      {result && result.short_review_summary && result.short_review_summary.count > 0 && (
+        <div className="short-review-summary">
+          <h4>Short Reviews ({result.short_review_summary.count} filtered)</h4>
+          <p>Positive rate: {(result.short_review_summary.positive_rate * 100).toFixed(1)}%</p>
+          {result.short_review_summary.frequent_phrases.length > 0 && (
+            <div className="frequent-phrases">
+              {result.short_review_summary.frequent_phrases.map((fp, i) => (
+                <span key={i} className="phrase-tag">
+                  {fp.phrase} ({fp.count})
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {result && (
         <div className="topics-grid">
           <div className="topic-column">
             <h3>Negative Topics ({result.negative_count} reviews)</h3>
+            {result.merge_info?.negative && result.merge_info.negative.merges.length > 0 && (
+              <p className="merge-info">
+                {result.merge_info.negative.original_topic_count} topics merged to {result.merge_info.negative.merged_topic_count}
+              </p>
+            )}
             {result.negative_topics.map(topic => (
               <TopicCard
                 key={`neg-${topic.id}`}
@@ -232,6 +280,11 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
           </div>
           <div className="topic-column">
             <h3>Positive Topics ({result.positive_count} reviews)</h3>
+            {result.merge_info?.positive && result.merge_info.positive.merges.length > 0 && (
+              <p className="merge-info">
+                {result.merge_info.positive.original_topic_count} topics merged to {result.merge_info.positive.merged_topic_count}
+              </p>
+            )}
             {result.positive_topics.map(topic => (
               <TopicCard
                 key={`pos-${topic.id}`}
