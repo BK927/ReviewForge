@@ -7,6 +7,7 @@ from keywords import extract_topic_keywords
 from topic_recommendation import recommend_topic_count
 from short_review import is_short_review, build_short_review_summary
 from topic_merge import merge_similar_topics, compute_centroids
+from segment_topics import compute_segment_topic_cross
 
 
 def run_analysis(params: dict, msg_id: str) -> dict:
@@ -34,6 +35,7 @@ def run_analysis(params: dict, msg_id: str) -> dict:
             "recommendation_details": None,
             "short_review_summary": {"count": 0, "positive_rate": 0.0, "frequent_phrases": []},
             "merge_info": {"positive": empty_merge, "negative": empty_merge},
+            "segment_topic_cross": {"playtime": [], "language": [], "steam_deck": [], "purchase_type": []},
         }
 
     if tier >= 1:
@@ -68,6 +70,7 @@ def run_analysis(params: dict, msg_id: str) -> dict:
             "recommendation_details": None,
             "short_review_summary": short_review_summary,
             "merge_info": {"positive": empty_merge, "negative": empty_merge},
+            "segment_topic_cross": {"playtime": [], "language": [], "steam_deck": [], "purchase_type": []},
         }
 
     # --- Step 2: Split by sentiment ---
@@ -139,6 +142,22 @@ def run_analysis(params: dict, msg_id: str) -> dict:
     pos_topic_list, pos_merge_info, pos_labels = pos_topics
     neg_topic_list, neg_merge_info, neg_labels = neg_topics
 
+    # Build segment × topic cross-analysis
+    cross_reviews = []
+    for i, r in enumerate(positive):
+        cross_reviews.append({
+            **r,
+            "sentiment": "positive",
+            "topic_id": pos_labels[i] if i < len(pos_labels) else -1,
+        })
+    for i, r in enumerate(negative):
+        cross_reviews.append({
+            **r,
+            "sentiment": "negative",
+            "topic_id": neg_labels[i] if i < len(neg_labels) else -1,
+        })
+    segment_topic_cross = compute_segment_topic_cross(cross_reviews, pos_topic_list, neg_topic_list)
+
     return {
         "model": emb_result["model"],
         "tier": tier,
@@ -161,6 +180,7 @@ def run_analysis(params: dict, msg_id: str) -> dict:
         },
         "positive_topics": pos_topic_list,
         "negative_topics": neg_topic_list,
+        "segment_topic_cross": segment_topic_cross,
     }
 
 

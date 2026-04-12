@@ -281,3 +281,43 @@ def test_analyze_group_includes_representative_review(monkeypatch):
         assert "representative_review" in topic, f"Topic {topic['id']} missing representative_review"
         assert isinstance(topic["representative_review"], str)
         assert len(topic["representative_review"]) > 0
+
+
+def test_run_analysis_includes_segment_topic_cross(monkeypatch):
+    """Result should include segment_topic_cross when reviews have segment metadata."""
+    reviews = [
+        {"text": "great combat system", "voted_up": True, "playtime": 6000, "language": "english", "steam_deck": False, "steam_purchase": True, "timestamp": 1000},
+        {"text": "excellent story", "voted_up": True, "playtime": 200, "language": "english", "steam_deck": False, "steam_purchase": True, "timestamp": 2000},
+        {"text": "bad performance", "voted_up": False, "playtime": 6000, "language": "english", "steam_deck": False, "steam_purchase": True, "timestamp": 3000},
+        {"text": "terrible bugs everywhere", "voted_up": False, "playtime": 60, "language": "koreana", "steam_deck": True, "steam_purchase": False, "timestamp": 4000},
+    ]
+    embeddings = np.array([[0.0, 0.0], [0.1, 0.1], [5.0, 5.0], [5.1, 5.1]])
+    progress_calls = []
+    cluster_calls = []
+
+    _install_common_mocks(monkeypatch, progress_calls, cluster_calls)
+    monkeypatch.setattr(
+        analyzer,
+        "generate_embeddings",
+        lambda params, msg_id: {"embeddings": embeddings[:len(params["texts"])].tolist(), "model": "test-model"},
+    )
+
+    result = analyzer.run_analysis(
+        {"reviews": reviews, "config": {"tier": 0, "topicCountMode": "manual", "n_topics": 2}},
+        "msg-seg",
+    )
+
+    assert "segment_topic_cross" in result
+    cross = result["segment_topic_cross"]
+    assert "playtime" in cross
+    assert "language" in cross
+    assert "steam_deck" in cross
+    assert "purchase_type" in cross
+
+    # Verify playtime segments have expected structure
+    for seg in cross["playtime"]:
+        assert "segment_label" in seg
+        assert "total_reviews" in seg
+        assert "positive_rate" in seg
+        assert "positive_topic_distribution" in seg
+        assert "negative_topic_distribution" in seg
