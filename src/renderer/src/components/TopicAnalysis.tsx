@@ -4,6 +4,7 @@ import { AnalysisProgress, ProgressData } from './AnalysisProgress'
 import { estimateLocalAnalysisMinutes } from '../lib/analysis-timing'
 import { TopicCountMode, TopicCountModeControl } from './TopicCountModeControl'
 import { TopicTimeline } from './TopicTimeline'
+import { InsightPanel } from './InsightPanel'
 
 export interface Topic {
   id: number
@@ -118,6 +119,7 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
   const [showRecommendationStage, setShowRecommendationStage] = useState(false)
   const [reviewLimit, setReviewLimit] = useState<'all' | number>('all')
   const [totalReviews, setTotalReviews] = useState(0)
+  const [gameName, setGameName] = useState('')
 
   useEffect(() => {
     setResult(null)
@@ -128,6 +130,9 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
     onAnalysisComplete(null)
     api.getGameStats(appId).then((stats: any) => {
       setTotalReviews(stats.total_collected ?? 0)
+    })
+    api.getGame(appId).then((g: any) => {
+      setGameName(g?.app_name ?? `App ${appId}`)
     })
     // Load cached analysis result if available
     api.getCachedAnalysis(appId).then((cached: any) => {
@@ -316,6 +321,7 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
 
       {result && (
         <>
+          <InsightPanel analysisResult={result} gameName={gameName} />
           {result.topics_over_time && (result.topics_over_time.weekly.length > 0 || result.topics_over_time.monthly.length > 0) && (
             <TopicTimeline analysisResult={result} />
           )}
