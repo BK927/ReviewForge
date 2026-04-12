@@ -321,3 +321,40 @@ def test_run_analysis_includes_segment_topic_cross(monkeypatch):
         assert "positive_rate" in seg
         assert "positive_topic_distribution" in seg
         assert "negative_topic_distribution" in seg
+
+
+def test_run_analysis_includes_topics_over_time(monkeypatch):
+    """Result should include topics_over_time with weekly and monthly periods."""
+    reviews = [
+        {"text": "great combat system", "voted_up": True, "playtime": 600, "language": "english", "steam_deck": False, "steam_purchase": True, "timestamp": 1704067200},
+        {"text": "excellent story telling", "voted_up": True, "playtime": 200, "language": "english", "steam_deck": False, "steam_purchase": True, "timestamp": 1706745600},
+        {"text": "terrible performance issues", "voted_up": False, "playtime": 300, "language": "english", "steam_deck": False, "steam_purchase": True, "timestamp": 1709251200},
+    ]
+    embeddings = np.array([[0.0, 0.0], [0.1, 0.1], [5.0, 5.0]])
+    progress_calls = []
+    cluster_calls = []
+
+    _install_common_mocks(monkeypatch, progress_calls, cluster_calls)
+    monkeypatch.setattr(
+        analyzer,
+        "generate_embeddings",
+        lambda params, msg_id: {"embeddings": embeddings[:len(params["texts"])].tolist(), "model": "test-model"},
+    )
+
+    result = analyzer.run_analysis(
+        {"reviews": reviews, "config": {"tier": 0, "topicCountMode": "manual", "n_topics": 2}},
+        "msg-time",
+    )
+
+    assert "topics_over_time" in result
+    tot = result["topics_over_time"]
+    assert "weekly" in tot
+    assert "monthly" in tot
+    assert len(tot["monthly"]) == 3  # Jan, Feb, Mar 2024
+
+    for period in tot["monthly"]:
+        assert "period" in period
+        assert "total_reviews" in period
+        assert "positive_rate" in period
+        assert "positive_topic_distribution" in period
+        assert "negative_topic_distribution" in period
