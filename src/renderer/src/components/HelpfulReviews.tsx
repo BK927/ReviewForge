@@ -14,9 +14,11 @@ export function HelpfulReviews({ appId }: { appId: number }) {
   const [positive, setPositive] = useState<HelpfulReview[]>([])
   const [negative, setNegative] = useState<HelpfulReview[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     setLoading(true)
+    setError(false)
     Promise.all([
       api.getTopHelpful(appId, true, 5) as Promise<HelpfulReview[]>,
       api.getTopHelpful(appId, false, 5) as Promise<HelpfulReview[]>,
@@ -25,12 +27,14 @@ export function HelpfulReviews({ appId }: { appId: number }) {
       setNegative(neg)
     }).catch(err => {
       console.error('Failed to load helpful reviews:', err)
+      setError(true)
     }).finally(() => {
       setLoading(false)
     })
   }, [appId])
 
   if (loading) return <div className="helpful-reviews-loading">Loading helpful reviews...</div>
+  if (error) return null
   if (positive.length === 0 && negative.length === 0) return null
 
   return (
