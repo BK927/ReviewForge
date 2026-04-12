@@ -5,6 +5,7 @@ import { parseAppId, fetchAllReviews, fetchGameName, transformQuerySummary } fro
 import { SidecarManager } from './sidecar'
 import { resolveAnalysisConfig, type NormalizedAnalysisConfig, type SavedSettings } from './analysis-settings'
 import { getCachedAnalysisResult, saveCachedAnalysisResult } from './analysis-cache'
+import { callLlm } from './llm-service'
 import fs from 'fs'
 import path from 'path'
 
@@ -194,5 +195,15 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
   ipcMain.handle('settings:save', (_event, settings: Record<string, unknown>) => {
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8')
     return true
+  })
+
+  ipcMain.handle('llm:call', async (_event, prompt: string) => {
+    const settings = loadSettings() as Record<string, unknown>
+    const provider = settings.apiProvider as string
+    const apiKey = settings.apiKey as string
+    if (!provider || provider === 'none' || !apiKey) {
+      throw new Error('LLM not configured. Set API provider and key in Settings.')
+    }
+    return callLlm({ provider: provider as 'claude' | 'openai' | 'gemini', apiKey }, prompt)
   })
 }

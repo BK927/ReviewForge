@@ -28,7 +28,10 @@ const api = {
 
   // Settings
   getSettings: () => ipcRenderer.invoke('settings:get'),
-  saveSettings: (settings: Record<string, unknown>) => ipcRenderer.invoke('settings:save', settings)
+  saveSettings: (settings: Record<string, unknown>) => ipcRenderer.invoke('settings:save', settings),
+
+  // LLM
+  callLlm: (prompt: string) => ipcRenderer.invoke('llm:call', prompt),
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -10,11 +10,13 @@ interface Settings {
   tier: 'auto' | '0' | '1'
   apiProvider: 'none' | 'claude' | 'openai' | 'gemini'
   apiKey: string
+  llmMode: 'auto' | 'semi' | 'off'
+  llmLanguage: string
 }
 
 export function SettingsDialog({ open, onClose }: Props) {
   const api = useApi()
-  const [settings, setSettings] = useState<Settings>({ tier: 'auto', apiProvider: 'none', apiKey: '' })
+  const [settings, setSettings] = useState<Settings>({ tier: 'auto', apiProvider: 'none', apiKey: '', llmMode: 'semi', llmLanguage: 'auto' })
   const [gpuInfo, setGpuInfo] = useState<any>(null)
 
   useEffect(() => {
@@ -67,6 +69,24 @@ export function SettingsDialog({ open, onClose }: Props) {
               onChange={e => setSettings({ ...settings, apiKey: e.target.value })}
             />
           )}
+          <label style={{ marginTop: '0.5rem', display: 'block' }}>
+            Insight Mode:
+            <select value={settings.llmMode} onChange={e => setSettings({ ...settings, llmMode: e.target.value as Settings['llmMode'] })}>
+              <option value="semi">Semi-auto (copy prompts)</option>
+              <option value="auto">Auto (call API)</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
+          <label style={{ marginTop: '0.5rem', display: 'block' }}>
+            Response Language:
+            <select value={settings.llmLanguage} onChange={e => setSettings({ ...settings, llmLanguage: e.target.value })}>
+              <option value="auto">Auto (match reviews)</option>
+              <option value="English">English</option>
+              <option value="Korean">Korean</option>
+              <option value="Japanese">Japanese</option>
+              <option value="Chinese">Chinese</option>
+            </select>
+          </label>
         </section>
 
         <div className="dialog-actions">
