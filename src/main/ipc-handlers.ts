@@ -130,7 +130,10 @@ export function registerIpcHandlers(db: Database.Database, sidecar: SidecarManag
       text: r.review_text,
       voted_up: r.voted_up === 1,
       language: r.language,
-      playtime: r.playtime_at_review
+      playtime: r.playtime_at_review,
+      steam_deck: r.primarily_steam_deck === 1,
+      steam_purchase: r.steam_purchase === 1,
+      timestamp: r.timestamp_created
     }))
 
     await sendProgress(`Sending ${reviewData.length.toLocaleString()} reviews to analysis engine...`)
