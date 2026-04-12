@@ -37,6 +37,22 @@ export interface TopicTimelinePeriod {
   negative_topic_distribution: TopicDistributionEntry[]
 }
 
+export interface EarlyAccessLifecycleEntry {
+  topic_id: number
+  topic_label: string
+  status: 'persistent' | 'resolved' | 'new'
+  ea_proportion: number
+  post_launch_proportion: number
+  ea_positive_rate: number
+  post_launch_positive_rate: number
+}
+
+export interface EarlyAccessComparisonData {
+  ea_review_count: number
+  post_launch_review_count: number
+  lifecycle: EarlyAccessLifecycleEntry[]
+}
+
 export interface AnalysisResult {
   positive_topics: Topic[]
   negative_topics: Topic[]
@@ -80,6 +96,8 @@ export interface AnalysisResult {
     weekly: TopicTimelinePeriod[]
     monthly: TopicTimelinePeriod[]
   }
+  // Early access comparison
+  early_access_comparison?: EarlyAccessComparisonData | null
 }
 
 interface TopicAnalysisProps {

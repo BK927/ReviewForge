@@ -5,6 +5,7 @@ import { getLanguageDisplayName } from '../lib/steam-languages'
 import { SegmentsSkeleton } from './Skeleton'
 import type { AnalysisResult } from './TopicAnalysis'
 import { SegmentTopicHeatmap } from './SegmentTopicHeatmap'
+import { EarlyAccessComparison } from './EarlyAccessComparison'
 
 const PLAYTIME_BRACKETS = [
   { label: '0-2h', min: 0, max: 120 },
@@ -198,6 +199,11 @@ export function SegmentAnalysis({ appId, analysisResult }: { appId: number; anal
           ) : (
             <div className="cross-analysis-placeholder" style={{ marginTop: '1rem', padding: '1rem', opacity: 0.6 }}>
               Run topic analysis first to see segment × topic cross-analysis.
+            </div>
+          )}
+          {analysisResult?.early_access_comparison && (
+            <div className="chart-card" style={{ marginTop: '1rem' }}>
+              <EarlyAccessComparison analysisResult={analysisResult} />
             </div>
           )}
         </>
