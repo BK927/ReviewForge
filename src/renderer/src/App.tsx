@@ -23,7 +23,7 @@ export default function App() {
               <TopicAnalysis appId={appId} onAnalysisComplete={setAnalysisResult} />
             </div>
             <div style={{ display: activeTab === 'segments' ? 'block' : 'none' }}>
-              <SegmentAnalysis appId={appId} />
+              <SegmentAnalysis appId={appId} analysisResult={analysisResult} />
             </div>
             <div style={{ display: activeTab === 'export' ? 'block' : 'none' }}>
               <ExportPanel appId={appId} analysisResult={analysisResult} />

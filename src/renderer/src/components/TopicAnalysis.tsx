@@ -13,6 +13,21 @@ export interface Topic {
   sample_reviews: string[]
 }
 
+export interface TopicDistributionEntry {
+  topic_id: number
+  topic_label: string
+  count: number
+  proportion: number
+}
+
+export interface SegmentTopicData {
+  segment_label: string
+  total_reviews: number
+  positive_rate: number
+  positive_topic_distribution: TopicDistributionEntry[]
+  negative_topic_distribution: TopicDistributionEntry[]
+}
+
 export interface AnalysisResult {
   positive_topics: Topic[]
   negative_topics: Topic[]
@@ -43,6 +58,13 @@ export interface AnalysisResult {
   merge_info?: {
     positive: { original_topic_count: number; merged_topic_count: number; merges: unknown[] }
     negative: { original_topic_count: number; merged_topic_count: number; merges: unknown[] }
+  }
+  // Segment × topic cross-analysis
+  segment_topic_cross?: {
+    playtime: SegmentTopicData[]
+    language: SegmentTopicData[]
+    steam_deck: SegmentTopicData[]
+    purchase_type: SegmentTopicData[]
   }
 }
 

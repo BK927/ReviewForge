@@ -3,6 +3,7 @@ import ReactECharts from 'echarts-for-react'
 import { useApi } from '../hooks/useApi'
 import { getLanguageDisplayName } from '../lib/steam-languages'
 import { SegmentsSkeleton } from './Skeleton'
+import type { AnalysisResult } from './TopicAnalysis'
 
 const PLAYTIME_BRACKETS = [
   { label: '0-2h', min: 0, max: 120 },
@@ -11,7 +12,7 @@ const PLAYTIME_BRACKETS = [
   { label: '50h+', min: 3000, max: Infinity }
 ]
 
-export function SegmentAnalysis({ appId }: { appId: number }) {
+export function SegmentAnalysis({ appId, analysisResult }: { appId: number; analysisResult: AnalysisResult | null }) {
   const api = useApi()
   const [reviews, setReviews] = useState<any[]>([])
   const [langFilter, setLangFilter] = useState('all')
