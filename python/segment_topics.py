@@ -13,7 +13,7 @@ def _bin_playtime(minutes):
     return "50h+"
 
 
-def _compute_axis(reviews, bin_fn, pos_topic_map, neg_topic_map):
+def _compute_axis(reviews, bin_fn, pos_topic_map, neg_topic_map, sort_order=None):
     """Compute per-segment topic distribution for a single segment axis."""
     bins = {}
     for r in reviews:
@@ -22,8 +22,14 @@ def _compute_axis(reviews, bin_fn, pos_topic_map, neg_topic_map):
             continue
         bins.setdefault(label, []).append(r)
 
+    if sort_order:
+        order = {label: i for i, label in enumerate(sort_order)}
+        sorted_items = sorted(bins.items(), key=lambda x: order.get(x[0], 999))
+    else:
+        sorted_items = sorted(bins.items(), key=lambda x: x[0])
+
     segments = []
-    for label, entries in sorted(bins.items(), key=lambda x: x[0]):
+    for label, entries in sorted_items:
         total = len(entries)
         pos_reviews = [r for r in entries if r["sentiment"] == "positive"]
         neg_reviews = [r for r in entries if r["sentiment"] == "negative"]
@@ -98,11 +104,12 @@ def compute_segment_topic_cross(reviews, pos_topics, neg_topics):
 
     result = {}
 
-    # Playtime axis
+    # Playtime axis (explicit order to avoid lexicographic sort)
     result["playtime"] = _compute_axis(
         reviews,
         lambda r: _bin_playtime(r.get("playtime", 0)),
         pos_topic_map, neg_topic_map,
+        sort_order=[b["label"] for b in PLAYTIME_BINS],
     )
 
     # Language axis (top 10 by review count)
