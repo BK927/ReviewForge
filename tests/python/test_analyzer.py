@@ -358,3 +358,31 @@ def test_run_analysis_includes_topics_over_time(monkeypatch):
         assert "positive_rate" in period
         assert "positive_topic_distribution" in period
         assert "negative_topic_distribution" in period
+
+
+def test_run_analysis_includes_early_access_comparison(monkeypatch):
+    """Result should include early_access_comparison field (None when not enough EA reviews)."""
+    reviews = [
+        {"text": "great combat system", "voted_up": True, "playtime": 600, "language": "english", "steam_deck": False, "steam_purchase": True, "timestamp": 1704067200, "early_access": False},
+        {"text": "excellent story telling", "voted_up": True, "playtime": 200, "language": "english", "steam_deck": False, "steam_purchase": True, "timestamp": 1706745600, "early_access": True},
+        {"text": "terrible performance issues", "voted_up": False, "playtime": 300, "language": "english", "steam_deck": False, "steam_purchase": True, "timestamp": 1709251200, "early_access": False},
+    ]
+    embeddings = np.array([[0.0, 0.0], [0.1, 0.1], [5.0, 5.0]])
+    progress_calls = []
+    cluster_calls = []
+
+    _install_common_mocks(monkeypatch, progress_calls, cluster_calls)
+    monkeypatch.setattr(
+        analyzer,
+        "generate_embeddings",
+        lambda params, msg_id: {"embeddings": embeddings[:len(params["texts"])].tolist(), "model": "test-model"},
+    )
+
+    result = analyzer.run_analysis(
+        {"reviews": reviews, "config": {"tier": 0, "topicCountMode": "manual", "n_topics": 2}},
+        "msg-ea",
+    )
+
+    # With only 3 reviews (1 EA), activation threshold not met -> None
+    assert "early_access_comparison" in result
+    assert result["early_access_comparison"] is None

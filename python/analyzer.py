@@ -9,6 +9,7 @@ from short_review import is_short_review, build_short_review_summary
 from topic_merge import merge_similar_topics, compute_centroids
 from segment_topics import compute_segment_topic_cross
 from topic_timeline import compute_topics_over_time
+from early_access import compute_early_access_comparison
 
 
 def run_analysis(params: dict, msg_id: str) -> dict:
@@ -38,6 +39,7 @@ def run_analysis(params: dict, msg_id: str) -> dict:
             "merge_info": {"positive": empty_merge, "negative": empty_merge},
             "segment_topic_cross": {"playtime": [], "language": [], "steam_deck": [], "purchase_type": []},
             "topics_over_time": {"weekly": [], "monthly": []},
+            "early_access_comparison": None,
         }
 
     if tier >= 1:
@@ -74,6 +76,7 @@ def run_analysis(params: dict, msg_id: str) -> dict:
             "merge_info": {"positive": empty_merge, "negative": empty_merge},
             "segment_topic_cross": {"playtime": [], "language": [], "steam_deck": [], "purchase_type": []},
             "topics_over_time": {"weekly": [], "monthly": []},
+            "early_access_comparison": None,
         }
 
     # --- Step 2: Split by sentiment ---
@@ -161,6 +164,7 @@ def run_analysis(params: dict, msg_id: str) -> dict:
         })
     segment_topic_cross = compute_segment_topic_cross(cross_reviews, pos_topic_list, neg_topic_list)
     topics_over_time = compute_topics_over_time(cross_reviews, pos_topic_list, neg_topic_list)
+    early_access_comparison = compute_early_access_comparison(cross_reviews, neg_topic_list)
 
     return {
         "model": emb_result["model"],
@@ -186,6 +190,7 @@ def run_analysis(params: dict, msg_id: str) -> dict:
         "negative_topics": neg_topic_list,
         "segment_topic_cross": segment_topic_cross,
         "topics_over_time": topics_over_time,
+        "early_access_comparison": early_access_comparison,
     }
 
 
