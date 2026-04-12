@@ -124,7 +124,7 @@ def run_analysis(params: dict, msg_id: str) -> dict:
         [r["text"] for r in positive], pos_embeddings,
         method, positive_k if positive_k is not None else n_topics, tier,
         merge_threshold
-    ) if positive else ([], {"original_topic_count": 0, "merged_topic_count": 0, "merges": []})
+    ) if positive else ([], {"original_topic_count": 0, "merged_topic_count": 0, "merges": []}, [])
 
     progress(80, "Extracting keywords...", stage="keywords")
 
@@ -132,12 +132,12 @@ def run_analysis(params: dict, msg_id: str) -> dict:
         [r["text"] for r in negative], neg_embeddings,
         method, negative_k if negative_k is not None else n_topics, tier,
         merge_threshold
-    ) if negative else ([], {"original_topic_count": 0, "merged_topic_count": 0, "merges": []})
+    ) if negative else ([], {"original_topic_count": 0, "merged_topic_count": 0, "merges": []}, [])
 
     progress(100, "Analysis complete", stage="complete")
 
-    pos_topic_list, pos_merge_info = pos_topics
-    neg_topic_list, neg_merge_info = neg_topics
+    pos_topic_list, pos_merge_info, pos_labels = pos_topics
+    neg_topic_list, neg_merge_info, neg_labels = neg_topics
 
     return {
         "model": emb_result["model"],
@@ -166,7 +166,7 @@ def run_analysis(params: dict, msg_id: str) -> dict:
 
 def _analyze_group(texts, embeddings, method, n_topics, tier, merge_threshold=0.80):
     if len(texts) < 2:
-        return [], {"original_topic_count": 0, "merged_topic_count": 0, "merges": []}
+        return [], {"original_topic_count": 0, "merged_topic_count": 0, "merges": []}, []
 
     labels = cluster_reviews(
         embeddings,
@@ -218,4 +218,4 @@ def _analyze_group(texts, embeddings, method, n_topics, tier, merge_threshold=0.
         })
 
     topics.sort(key=lambda t: t["review_count"], reverse=True)
-    return topics, merge_info
+    return topics, merge_info, labels
