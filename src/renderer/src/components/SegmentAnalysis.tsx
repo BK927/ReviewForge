@@ -4,6 +4,7 @@ import { useApi } from '../hooks/useApi'
 import { getLanguageDisplayName } from '../lib/steam-languages'
 import { SegmentsSkeleton } from './Skeleton'
 import type { AnalysisResult } from './TopicAnalysis'
+import { SegmentTopicHeatmap } from './SegmentTopicHeatmap'
 
 const PLAYTIME_BRACKETS = [
   { label: '0-2h', min: 0, max: 120 },
@@ -174,20 +175,32 @@ export function SegmentAnalysis({ appId, analysisResult }: { appId: number; anal
       {loading ? (
         <SegmentsSkeleton />
       ) : (
-        <div className="charts-grid">
-          <div className="chart-card">
-            <h3>Positive Rate by Playtime</h3>
-            <ReactECharts option={playtimeOption} style={{ height: 300 }} />
+        <>
+          <div className="charts-grid">
+            <div className="chart-card">
+              <h3>Positive Rate by Playtime</h3>
+              <ReactECharts option={playtimeOption} style={{ height: 300 }} />
+            </div>
+            <div className="chart-card">
+              <h3>Positive Rate by Language</h3>
+              <ReactECharts option={langOption} style={{ height: 300 }} />
+            </div>
+            <div className="chart-card">
+              <h3>Purchase Type</h3>
+              <ReactECharts option={purchaseOption} style={{ height: 300 }} />
+            </div>
           </div>
-          <div className="chart-card">
-            <h3>Positive Rate by Language</h3>
-            <ReactECharts option={langOption} style={{ height: 300 }} />
-          </div>
-          <div className="chart-card">
-            <h3>Purchase Type</h3>
-            <ReactECharts option={purchaseOption} style={{ height: 300 }} />
-          </div>
-        </div>
+          {analysisResult?.segment_topic_cross ? (
+            <div className="chart-card" style={{ marginTop: '1rem' }}>
+              <h3>Topic × Segment Cross-Analysis</h3>
+              <SegmentTopicHeatmap analysisResult={analysisResult} />
+            </div>
+          ) : (
+            <div className="cross-analysis-placeholder" style={{ marginTop: '1rem', padding: '1rem', opacity: 0.6 }}>
+              Run topic analysis first to see segment × topic cross-analysis.
+            </div>
+          )}
+        </>
       )}
     </div>
   )
