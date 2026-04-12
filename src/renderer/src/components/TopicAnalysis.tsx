@@ -3,6 +3,7 @@ import { useApi } from '../hooks/useApi'
 import { AnalysisProgress, ProgressData } from './AnalysisProgress'
 import { estimateLocalAnalysisMinutes } from '../lib/analysis-timing'
 import { TopicCountMode, TopicCountModeControl } from './TopicCountModeControl'
+import { TopicTimeline } from './TopicTimeline'
 
 export interface Topic {
   id: number
@@ -22,6 +23,14 @@ export interface TopicDistributionEntry {
 
 export interface SegmentTopicData {
   segment_label: string
+  total_reviews: number
+  positive_rate: number
+  positive_topic_distribution: TopicDistributionEntry[]
+  negative_topic_distribution: TopicDistributionEntry[]
+}
+
+export interface TopicTimelinePeriod {
+  period: string
   total_reviews: number
   positive_rate: number
   positive_topic_distribution: TopicDistributionEntry[]
@@ -65,6 +74,11 @@ export interface AnalysisResult {
     language: SegmentTopicData[]
     steam_deck: SegmentTopicData[]
     purchase_type: SegmentTopicData[]
+  }
+  // Topic timeline
+  topics_over_time?: {
+    weekly: TopicTimelinePeriod[]
+    monthly: TopicTimelinePeriod[]
   }
 }
 
@@ -283,42 +297,47 @@ export function TopicAnalysis({ appId, onAnalysisComplete }: TopicAnalysisProps)
       )}
 
       {result && (
-        <div className="topics-grid">
-          <div className="topic-column">
-            <h3>Negative Topics ({result.negative_count} reviews)</h3>
-            {result.merge_info?.negative && result.merge_info.negative.merges.length > 0 && (
-              <p className="merge-info">
-                {result.merge_info.negative.original_topic_count} topics merged to {result.merge_info.negative.merged_topic_count}
-              </p>
-            )}
-            {result.negative_topics.map(topic => (
-              <TopicCard
-                key={`neg-${topic.id}`}
-                topic={topic}
-                type="negative"
-                expanded={expandedTopic === `neg-${topic.id}`}
-                onToggle={() => toggleTopic(`neg-${topic.id}`)}
-              />
-            ))}
+        <>
+          {result.topics_over_time && (result.topics_over_time.weekly.length > 0 || result.topics_over_time.monthly.length > 0) && (
+            <TopicTimeline analysisResult={result} />
+          )}
+          <div className="topics-grid">
+            <div className="topic-column">
+              <h3>Negative Topics ({result.negative_count} reviews)</h3>
+              {result.merge_info?.negative && result.merge_info.negative.merges.length > 0 && (
+                <p className="merge-info">
+                  {result.merge_info.negative.original_topic_count} topics merged to {result.merge_info.negative.merged_topic_count}
+                </p>
+              )}
+              {result.negative_topics.map(topic => (
+                <TopicCard
+                  key={`neg-${topic.id}`}
+                  topic={topic}
+                  type="negative"
+                  expanded={expandedTopic === `neg-${topic.id}`}
+                  onToggle={() => toggleTopic(`neg-${topic.id}`)}
+                />
+              ))}
+            </div>
+            <div className="topic-column">
+              <h3>Positive Topics ({result.positive_count} reviews)</h3>
+              {result.merge_info?.positive && result.merge_info.positive.merges.length > 0 && (
+                <p className="merge-info">
+                  {result.merge_info.positive.original_topic_count} topics merged to {result.merge_info.positive.merged_topic_count}
+                </p>
+              )}
+              {result.positive_topics.map(topic => (
+                <TopicCard
+                  key={`pos-${topic.id}`}
+                  topic={topic}
+                  type="positive"
+                  expanded={expandedTopic === `pos-${topic.id}`}
+                  onToggle={() => toggleTopic(`pos-${topic.id}`)}
+                />
+              ))}
+            </div>
           </div>
-          <div className="topic-column">
-            <h3>Positive Topics ({result.positive_count} reviews)</h3>
-            {result.merge_info?.positive && result.merge_info.positive.merges.length > 0 && (
-              <p className="merge-info">
-                {result.merge_info.positive.original_topic_count} topics merged to {result.merge_info.positive.merged_topic_count}
-              </p>
-            )}
-            {result.positive_topics.map(topic => (
-              <TopicCard
-                key={`pos-${topic.id}`}
-                topic={topic}
-                type="positive"
-                expanded={expandedTopic === `pos-${topic.id}`}
-                onToggle={() => toggleTopic(`pos-${topic.id}`)}
-              />
-            ))}
-          </div>
-        </div>
+        </>
       )}
     </div>
   )
