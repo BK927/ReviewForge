@@ -1,0 +1,15 @@
+node_modules/
+.svelte-kit/
+build/
+dist/
+__pycache__/
+.pytest_cache/
+.venv/
+.env
+*.log
+data/*.duckdb
+data/*.wal
+data/*.tmp
+backend/data/*.duckdb
+backend/data/*.wal
+backend/data/*.tmp
