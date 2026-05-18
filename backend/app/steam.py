@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime
 import json
 from typing import Any
@@ -6,6 +7,13 @@ import httpx
 
 
 STEAM_REVIEWS_URL = "https://store.steampowered.com/appreviews/{app_id}"
+
+
+@dataclass(frozen=True)
+class SteamReviewFetchResult:
+    rows: list[tuple[Any, ...]]
+    next_cursor: str | None
+    has_more: bool
 
 
 def _steam_time(value: Any) -> datetime | None:
@@ -47,9 +55,12 @@ async def fetch_steam_reviews(
     review_type: str = "all",
     purchase_type: str = "all",
     max_reviews: int = 100,
-) -> list[tuple[Any, ...]]:
+    cursor: str | None = None,
+) -> SteamReviewFetchResult:
     reviews: list[tuple[Any, ...]] = []
-    cursor = "*"
+    current_cursor = cursor or "*"
+    next_cursor: str | None = None
+    has_more = False
     async with httpx.AsyncClient(timeout=20) as client:
         while len(reviews) < max_reviews:
             response = await client.get(
@@ -61,20 +72,22 @@ async def fetch_steam_reviews(
                     "review_type": review_type,
                     "purchase_type": purchase_type,
                     "num_per_page": min(100, max_reviews - len(reviews)),
-                    "cursor": cursor,
+                    "cursor": current_cursor,
                 },
             )
             response.raise_for_status()
             payload = response.json()
             batch = payload.get("reviews") or []
             if not batch:
+                has_more = False
                 break
             reviews.extend(normalize_steam_review(app_id, item) for item in batch)
             next_cursor = payload.get("cursor")
-            if not next_cursor or next_cursor == cursor:
+            has_more = bool(next_cursor and next_cursor != current_cursor)
+            if not has_more:
                 break
-            cursor = next_cursor
-    return reviews
+            current_cursor = next_cursor
+    return SteamReviewFetchResult(rows=reviews, next_cursor=next_cursor, has_more=has_more)
 
 
 def placeholder_reviews(app_id: str, max_reviews: int) -> list[tuple[Any, ...]]:

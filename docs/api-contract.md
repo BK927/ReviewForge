@@ -22,13 +22,56 @@ jobs that the UI can poll.
 - `GET /api/reports`
 - `POST /api/reports`
 - `GET /api/settings`
+- `GET /api/settings/models`
 - `PUT /api/settings/{key}`
 - `GET /api/jobs`
 - `GET /api/jobs/{job_id}`
 - `POST /api/refresh-steam`
+- `GET /api/analysis-runs`
+- `POST /api/analysis-runs`
+- `GET /api/timeline`
+- `GET /api/events/{event_id}/impact`
 
-`POST /api/refresh-steam` uses local placeholder reviews by default. Set
-`use_live_steam` to `true` to call Steam directly.
+`POST /api/refresh-steam` calls Steam by default. Use
+`{"use_live_steam": false}` or `{"sample_mode": true}` for deterministic local
+sample reviews. Supported request fields:
+
+- `app_id`
+- `max_reviews` up to `5000`
+- `language`
+- `review_type`
+- `purchase_type`
+- `cursor`
+- `use_live_steam`
+- `sample_mode`
+
+The response includes `job`, `inserted_reviews`, `updated_reviews`, `source`,
+`next_cursor`, and `has_more`.
+
+`POST /api/analysis-runs` runs a local synchronous v1 analysis and records both
+a job and an analysis run. Supported request fields:
+
+- `app_id`
+- `scope`: `all` or `new`
+- `embedding_model`
+- `min_cluster_size`
+- `generate_ai_summary`
+- `llm_provider`
+
+The backend uses local TF-IDF clustering when `sklearn` is installed. If it is
+not available, it falls back to deterministic keyword clustering and reports
+that in the analysis message. New clusters, evidence, and generated reports are
+linked to `analysis_run_id`; `GET /api/clusters` and `GET /api/evidence` prefer
+the latest completed run while still tolerating seed data.
+
+`GET /api/timeline` accepts `app_id`, `bucket=day|week|month`, `language`,
+`playtime_min`, and `playtime_max`.
+
+`GET /api/events/{event_id}/impact` compares review windows before and after an
+event. Treat the result as a temporal comparison, not a causal claim.
+
+`GET /api/settings/models` reports the built-in local provider and LM Studio
+availability at `http://127.0.0.1:1234/v1`.
 
 ## Source Types
 

@@ -15,6 +15,7 @@ CREATE SEQUENCE IF NOT EXISTS cluster_id_seq START 1;
 CREATE SEQUENCE IF NOT EXISTS evidence_id_seq START 1;
 CREATE SEQUENCE IF NOT EXISTS report_id_seq START 1;
 CREATE SEQUENCE IF NOT EXISTS job_id_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS analysis_run_id_seq START 1;
 
 CREATE TABLE IF NOT EXISTS reviews (
     recommendation_id VARCHAR PRIMARY KEY,
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE TABLE IF NOT EXISTS clusters (
     id BIGINT PRIMARY KEY DEFAULT nextval('cluster_id_seq'),
+    analysis_run_id BIGINT,
     label VARCHAR NOT NULL,
     summary TEXT NOT NULL,
     sentiment VARCHAR NOT NULL,
@@ -65,6 +67,7 @@ CREATE TABLE IF NOT EXISTS review_clusters (
 
 CREATE TABLE IF NOT EXISTS evidence (
     id BIGINT PRIMARY KEY DEFAULT nextval('evidence_id_seq'),
+    analysis_run_id BIGINT,
     review_id VARCHAR NOT NULL,
     cluster_id BIGINT,
     quote TEXT NOT NULL,
@@ -75,6 +78,7 @@ CREATE TABLE IF NOT EXISTS evidence (
 
 CREATE TABLE IF NOT EXISTS reports (
     id BIGINT PRIMARY KEY DEFAULT nextval('report_id_seq'),
+    analysis_run_id BIGINT,
     title VARCHAR NOT NULL,
     summary TEXT NOT NULL,
     filters JSON,
@@ -97,6 +101,26 @@ CREATE TABLE IF NOT EXISTS jobs (
     finished_at TIMESTAMP,
     metadata JSON
 );
+
+CREATE TABLE IF NOT EXISTS analysis_runs (
+    id BIGINT PRIMARY KEY DEFAULT nextval('analysis_run_id_seq'),
+    app_id VARCHAR,
+    status VARCHAR NOT NULL,
+    progress DOUBLE NOT NULL DEFAULT 0,
+    message TEXT,
+    params JSON,
+    started_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
+    finished_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS review_embeddings (
+    review_id VARCHAR NOT NULL,
+    model VARCHAR NOT NULL,
+    dimension INTEGER NOT NULL,
+    embedding TEXT NOT NULL,
+    generated_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
+    PRIMARY KEY (review_id, model)
+);
 """
 
 
@@ -118,11 +142,56 @@ def connect() -> Iterator[duckdb.DuckDBPyConnection]:
 def initialize_database() -> None:
     with connect() as conn:
         conn.execute(SCHEMA_SQL)
+        run_migrations(conn)
+        ensure_default_settings(conn)
         seed_if_empty(conn)
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def run_migrations(conn: duckdb.DuckDBPyConnection) -> None:
+    _add_column_if_missing(conn, "clusters", "analysis_run_id", "BIGINT")
+    _add_column_if_missing(conn, "evidence", "analysis_run_id", "BIGINT")
+    _add_column_if_missing(conn, "reports", "analysis_run_id", "BIGINT")
+
+
+def ensure_default_settings(conn: duckdb.DuckDBPyConnection) -> None:
+    defaults = [
+        (
+            "steam_cursor",
+            {
+                "app_id": get_settings().steam_app_id,
+                "cursor": None,
+                "has_more": False,
+                "source": "not_refreshed",
+            },
+        ),
+        (
+            "models",
+            {
+                "default_provider": "local_rules",
+                "embedding_model": "local-hash-v1",
+                "lm_studio_base_url": "http://127.0.0.1:1234/v1",
+            },
+        ),
+    ]
+    for key, value in defaults:
+        conn.execute(
+            """
+            INSERT INTO settings (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT (key) DO NOTHING
+            """,
+            [key, json.dumps(value), utcnow()],
+        )
+
+
+def _add_column_if_missing(conn: duckdb.DuckDBPyConnection, table: str, column: str, column_type: str) -> None:
+    columns = {row[1] for row in conn.execute(f"PRAGMA table_info('{table}')").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
 
 
 def seed_if_empty(conn: duckdb.DuckDBPyConnection) -> None:

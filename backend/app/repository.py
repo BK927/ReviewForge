@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 from typing import Any
 
@@ -100,14 +100,43 @@ def delete_event(event_id: int) -> bool:
         return bool(before)
 
 
-def list_clusters(language: str | None = None) -> list[dict[str, Any]]:
-    sql = "SELECT * FROM clusters"
+def _latest_completed_analysis_run_id(conn: duckdb.DuckDBPyConnection, app_id: str | None = None) -> int | None:
+    clauses = [
+        "status = 'succeeded'",
+        "EXISTS (SELECT 1 FROM clusters c WHERE c.analysis_run_id = analysis_runs.id)",
+    ]
     params: list[Any] = []
-    if language:
-        sql += " WHERE language = ? OR language IS NULL"
-        params.append(language)
-    sql += " ORDER BY review_count DESC, avg_weighted_score DESC, id"
+    if app_id:
+        clauses.append("app_id = ?")
+        params.append(app_id)
+    row = conn.execute(
+        f"""
+        SELECT id
+        FROM analysis_runs
+        WHERE {" AND ".join(clauses)}
+        ORDER BY coalesce(finished_at, started_at) DESC, id DESC
+        LIMIT 1
+        """,
+        params,
+    ).fetchone()
+    return int(row[0]) if row else None
+
+
+def list_clusters(language: str | None = None, app_id: str | None = None) -> list[dict[str, Any]]:
+    sql = "SELECT * FROM clusters"
+    clauses = []
+    params: list[Any] = []
     with connect() as conn:
+        latest_run_id = _latest_completed_analysis_run_id(conn, app_id)
+        if latest_run_id is not None:
+            clauses.append("analysis_run_id = ?")
+            params.append(latest_run_id)
+        if language:
+            clauses.append("(language = ? OR language IS NULL)")
+            params.append(language)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY review_count DESC, avg_weighted_score DESC, id"
         return rows_to_dicts(conn.execute(sql, params))
 
 
@@ -128,20 +157,28 @@ def cluster_reviews(cluster_id: int, limit: int, offset: int) -> list[dict[str, 
         )
 
 
-def list_evidence(cluster_id: int | None = None, evidence_type: str | None = None) -> list[dict[str, Any]]:
+def list_evidence(
+    cluster_id: int | None = None,
+    evidence_type: str | None = None,
+    app_id: str | None = None,
+) -> list[dict[str, Any]]:
     sql = "SELECT * FROM evidence"
     clauses = []
     params: list[Any] = []
-    if cluster_id is not None:
-        clauses.append("cluster_id = ?")
-        params.append(cluster_id)
-    if evidence_type:
-        clauses.append("evidence_type = ?")
-        params.append(evidence_type)
-    if clauses:
-        sql += " WHERE " + " AND ".join(clauses)
-    sql += " ORDER BY created_at DESC, id DESC"
     with connect() as conn:
+        latest_run_id = _latest_completed_analysis_run_id(conn, app_id)
+        if latest_run_id is not None:
+            clauses.append("analysis_run_id = ?")
+            params.append(latest_run_id)
+        if cluster_id is not None:
+            clauses.append("cluster_id = ?")
+            params.append(cluster_id)
+        if evidence_type:
+            clauses.append("evidence_type = ?")
+            params.append(evidence_type)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY created_at DESC, id DESC"
         return rows_to_dicts(conn.execute(sql, params))
 
 
@@ -196,6 +233,25 @@ def create_job(job_type: str, status: str, message: str | None = None, metadata:
         return get_job_with_conn(conn, job_id)
 
 
+def update_job(
+    job_id: int,
+    status: str,
+    message: str,
+    progress: float,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET status = ?, message = ?, progress = ?, metadata = ?
+            WHERE id = ?
+            """,
+            [status, message, progress, json.dumps(metadata or {}), job_id],
+        )
+        return get_job_with_conn(conn, job_id)
+
+
 def finish_job(job_id: int, status: str, message: str, progress: float = 1, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     with connect() as conn:
         conn.execute(
@@ -207,6 +263,172 @@ def finish_job(job_id: int, status: str, message: str, progress: float = 1, meta
             [status, message, progress, utcnow(), json.dumps(metadata or {}), job_id],
         )
         return get_job_with_conn(conn, job_id)
+
+
+def create_analysis_run(app_id: str | None, params: dict[str, Any]) -> dict[str, Any]:
+    with connect() as conn:
+        run_id = conn.execute(
+            """
+            INSERT INTO analysis_runs (app_id, status, progress, message, params)
+            VALUES (?, 'running', 0, 'Analysis started', ?) RETURNING id
+            """,
+            [app_id, json.dumps(params)],
+        ).fetchone()[0]
+        return get_analysis_run_with_conn(conn, run_id)
+
+
+def update_analysis_run(
+    run_id: int,
+    *,
+    status: str,
+    progress: float,
+    message: str,
+    finished: bool = False,
+) -> dict[str, Any]:
+    with connect() as conn:
+        if finished:
+            conn.execute(
+                """
+                UPDATE analysis_runs
+                SET status = ?, progress = ?, message = ?, finished_at = ?
+                WHERE id = ?
+                """,
+                [status, progress, message, utcnow(), run_id],
+            )
+        else:
+            conn.execute(
+                "UPDATE analysis_runs SET status = ?, progress = ?, message = ? WHERE id = ?",
+                [status, progress, message, run_id],
+            )
+        return get_analysis_run_with_conn(conn, run_id)
+
+
+def list_analysis_runs(app_id: str | None = None) -> list[dict[str, Any]]:
+    sql = "SELECT * FROM analysis_runs"
+    params: list[Any] = []
+    if app_id:
+        sql += " WHERE app_id = ?"
+        params.append(app_id)
+    sql += " ORDER BY started_at DESC, id DESC"
+    with connect() as conn:
+        rows = rows_to_dicts(conn.execute(sql, params))
+    for row in rows:
+        row["params"] = _loads(row.get("params"))
+    return rows
+
+
+def get_analysis_run(run_id: int) -> dict[str, Any] | None:
+    with connect() as conn:
+        rows = rows_to_dicts(conn.execute("SELECT * FROM analysis_runs WHERE id = ?", [run_id]))
+    if not rows:
+        return None
+    rows[0]["params"] = _loads(rows[0].get("params"))
+    return rows[0]
+
+
+def get_analysis_run_with_conn(conn: duckdb.DuckDBPyConnection, run_id: int) -> dict[str, Any]:
+    row = rows_to_dicts(conn.execute("SELECT * FROM analysis_runs WHERE id = ?", [run_id]))[0]
+    row["params"] = _loads(row.get("params"))
+    return row
+
+
+def review_timeline(
+    *,
+    app_id: str | None = None,
+    bucket: str = "day",
+    language: str | None = None,
+    playtime_min: int | None = None,
+    playtime_max: int | None = None,
+) -> list[dict[str, Any]]:
+    if bucket not in {"day", "week", "month"}:
+        raise ValueError("bucket must be day, week, or month")
+    time_expr = "coalesce(steam_created_at, collected_at)"
+    clauses = [f"{time_expr} IS NOT NULL"]
+    params: list[Any] = []
+    if app_id:
+        clauses.append("app_id = ?")
+        params.append(app_id)
+    if language:
+        clauses.append("language = ?")
+        params.append(language)
+    if playtime_min is not None:
+        clauses.append("playtime_at_review >= ?")
+        params.append(playtime_min)
+    if playtime_max is not None:
+        clauses.append("playtime_at_review <= ?")
+        params.append(playtime_max)
+    with connect() as conn:
+        return rows_to_dicts(
+            conn.execute(
+                f"""
+                SELECT
+                    date_trunc('{bucket}', {time_expr}) AS bucket_start,
+                    count(*) AS review_count,
+                    count(*) FILTER (WHERE voted_up) AS positive_count,
+                    count(*) FILTER (WHERE NOT voted_up) AS negative_count,
+                    coalesce(avg(CASE WHEN voted_up THEN 1.0 ELSE 0.0 END), 0) AS positive_ratio,
+                    coalesce(avg(weighted_vote_score), 0) AS avg_weighted_score
+                FROM reviews
+                WHERE {" AND ".join(clauses)}
+                GROUP BY bucket_start
+                ORDER BY bucket_start
+                """,
+                params,
+            )
+        )
+
+
+def event_impact(event_id: int, window_days: int = 14, app_id: str | None = None) -> dict[str, Any] | None:
+    with connect() as conn:
+        event_rows = rows_to_dicts(conn.execute("SELECT * FROM events WHERE id = ?", [event_id]))
+        if not event_rows:
+            return None
+        event = event_rows[0]
+        occurred_at = event["occurred_at"]
+        before_start = occurred_at - timedelta(days=window_days)
+        after_end = occurred_at + timedelta(days=window_days)
+        before = _impact_window(conn, before_start, occurred_at, app_id)
+        after = _impact_window(conn, occurred_at, after_end, app_id)
+    return {
+        "event": event,
+        "window_days": window_days,
+        "before": before,
+        "after": after,
+        "delta": {
+            "review_count": float(after["review_count"] - before["review_count"]),
+            "positive_ratio": float(after["positive_ratio"] - before["positive_ratio"]),
+            "avg_weighted_score": float(after["avg_weighted_score"] - before["avg_weighted_score"]),
+        },
+    }
+
+
+def _impact_window(
+    conn: duckdb.DuckDBPyConnection,
+    start_at: datetime,
+    end_at: datetime,
+    app_id: str | None,
+) -> dict[str, Any]:
+    time_expr = "coalesce(steam_created_at, collected_at)"
+    clauses = [f"{time_expr} >= ?", f"{time_expr} < ?"]
+    params: list[Any] = [start_at, end_at]
+    if app_id:
+        clauses.append("app_id = ?")
+        params.append(app_id)
+    row = conn.execute(
+        f"""
+        SELECT
+            count(*) AS review_count,
+            count(*) FILTER (WHERE voted_up) AS positive_count,
+            count(*) FILTER (WHERE NOT voted_up) AS negative_count,
+            coalesce(avg(CASE WHEN voted_up THEN 1.0 ELSE 0.0 END), 0) AS positive_ratio,
+            coalesce(avg(weighted_vote_score), 0) AS avg_weighted_score
+        FROM reviews
+        WHERE {" AND ".join(clauses)}
+        """,
+        params,
+    ).fetchone()
+    keys = ["review_count", "positive_count", "negative_count", "positive_ratio", "avg_weighted_score"]
+    return dict(zip(keys, row))
 
 
 def list_jobs() -> list[dict[str, Any]]:
