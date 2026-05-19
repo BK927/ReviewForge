@@ -37,6 +37,28 @@ class AnalysisPipelineResult:
     message: str
 
 
+@dataclass(frozen=True)
+class ReviewQuality:
+    review_id: str
+    normalized_text: str
+    text_hash: str
+    quality_score: float
+    quality_flags: list[str]
+    duplicate_count: int
+
+
+@dataclass(frozen=True)
+class ClusterInsight:
+    title: str
+    summary: str
+    praise: str
+    pain_point: str
+    planner_action: str
+    marketing_angle: str
+    confidence: float
+    warnings: list[str]
+
+
 THEMES = [
     Theme(
         "late_loop",
@@ -76,6 +98,54 @@ THEMES = [
     ),
 ]
 
+GAME_THEMES: dict[str, list[Theme]] = {
+    "730": [
+        Theme("cheaters", "치터/VAC 신뢰", r"cheat|cheater|hacker|vac|spinbot|aimbot|wallhack|читер|читер", "치터, 핵, VAC 대응 신뢰도에 대한 반응입니다."),
+        Theme("servers", "서버와 연결 안정성", r"server|tick|ping|lag|packet|disconnect|서버|핑|랙|тик|пинг", "서버 품질, 지연, 접속 안정성 문제가 함께 언급됩니다."),
+        Theme("matchmaking", "매치메이킹과 랭크", r"matchmaking|rank|premier|elo|teammate|mmr|매치|랭크|рейтин", "매치 품질, 랭크, 팀 구성에 대한 의견입니다."),
+        Theme("performance", "성능과 프레임", r"fps|frame|stutter|crash|freeze|performance|프레임|성능|卡顿", "프레임 드랍, 튕김, 끊김 같은 성능 신호입니다."),
+        Theme("csgo_compare", "CS:GO와 변화 비교", r"csgo|cs:go|cs 2|cs2|old cs|source|글옵", "이전 버전과 비교해 달라진 점에 대한 반응입니다."),
+        Theme("ui", "UI와 가독성", r"ui|interface|menu|hud|readability|font|메뉴|가독성|интерфейс", "UI, HUD, 메뉴, 가독성에 대한 사용성 의견입니다."),
+    ],
+    "413150": [
+        Theme("cozy", "힐링감과 몰입", r"cozy|relax|chill|comfort|힐링|농장|relaxing|уют", "편안함, 몰입감, 장기 플레이 만족에 대한 반응입니다."),
+        Theme("content", "콘텐츠 볼륨", r"content|update|quest|event|festival|콘텐츠|업데이트", "즐길 거리, 업데이트, 이벤트 볼륨에 대한 의견입니다."),
+        Theme("multiplayer", "멀티플레이와 협동", r"multiplayer|coop|co-op|friend|친구|멀티", "친구와 함께 하는 플레이 경험에 대한 신호입니다."),
+        Theme("mods", "모드와 커뮤니티", r"mod|mods|workshop|community|모드", "모드 친화성과 커뮤니티 확장성에 대한 반응입니다."),
+    ],
+    "2379780": [
+        Theme("addictive", "중독성 있는 반복 플레이", r"addictive|again|one more|replay|중독|한판|もう一回", "계속 다시 하게 만드는 루프에 대한 호평입니다."),
+        Theme("deckbuilding", "카드 조합과 덱빌딩", r"deck|card|poker|hand|blind|joker|build|combo|synergy|카드|덱|포커|조커|시너지|组合|卡牌", "카드 조합, 조커 시너지, 덱빌딩 선택지에 대한 반응입니다."),
+        Theme("jimbo_meme", "Jimbo와 밈 반응", r"jimbo|clown|meme|mémé|밈|광대", "Jimbo, 광대 캐릭터, 밈성 반응처럼 커뮤니티 농담에 가까운 의견입니다."),
+        Theme("rng", "운과 밸런스", r"rng|luck|random|balance|joker|seed|운빨|밸런스", "랜덤성, 조커 조합, 밸런스에 대한 의견입니다."),
+        Theme("difficulty", "난이도와 진척", r"difficulty|hard|ante|stake|progress|난이도|어려", "난이도 곡선과 진행 체감에 대한 반응입니다."),
+    ],
+}
+
+LOW_INFORMATION_PHRASES = {
+    "good",
+    "great",
+    "nice",
+    "fun",
+    "bad",
+    "trash",
+    "gg",
+    "ez",
+    "ok",
+    "yes",
+    "no",
+    "nb",
+    "lol",
+    "10/10",
+    "11/10",
+    "추천",
+    "비추천",
+    "재밌음",
+    "재밌다",
+    "최고",
+    "별로",
+}
+
 STOPWORDS = {
     "the",
     "and",
@@ -85,6 +155,34 @@ STOPWORDS = {
     "this",
     "that",
     "game",
+    "games",
+    "balatro",
+    "it",
+    "is",
+    "in",
+    "of",
+    "on",
+    "or",
+    "so",
+    "my",
+    "we",
+    "he",
+    "she",
+    "them",
+    "there",
+    "their",
+    "these",
+    "those",
+    "good",
+    "great",
+    "fun",
+    "best",
+    "better",
+    "well",
+    "hours",
+    "play",
+    "played",
+    "playing",
     "still",
     "feel",
     "feels",
@@ -93,6 +191,96 @@ STOPWORDS = {
     "new",
     "same",
     "again",
+    "about",
+    "also",
+    "are",
+    "can",
+    "cant",
+    "could",
+    "dont",
+    "does",
+    "get",
+    "got",
+    "had",
+    "has",
+    "have",
+    "into",
+    "its",
+    "just",
+    "like",
+    "make",
+    "makes",
+    "more",
+    "much",
+    "not",
+    "one",
+    "only",
+    "out",
+    "really",
+    "than",
+    "then",
+    "they",
+    "too",
+    "very",
+    "was",
+    "were",
+    "what",
+    "when",
+    "will",
+    "you",
+    "your",
+    "10",
+    "100",
+    "de",
+    "del",
+    "des",
+    "du",
+    "el",
+    "en",
+    "es",
+    "est",
+    "et",
+    "il",
+    "je",
+    "la",
+    "le",
+    "les",
+    "lo",
+    "los",
+    "me",
+    "mi",
+    "no",
+    "pas",
+    "por",
+    "que",
+    "se",
+    "un",
+    "una",
+    "une",
+    "juego",
+    "juegos",
+    "muy",
+    "pero",
+    "este",
+    "esta",
+    "con",
+    "si",
+    "te",
+    "das",
+    "der",
+    "die",
+    "ein",
+    "eine",
+    "ich",
+    "ist",
+    "mit",
+    "nicht",
+    "und",
+    "на",
+    "не",
+    "что",
+    "это",
+    "как",
     "좋지만",
     "조금",
     "아직",
@@ -109,6 +297,12 @@ def run_local_analysis(
     min_cluster_size: int,
     generate_ai_summary: bool,
     llm_provider: str | None,
+    llm_model: str | None = None,
+    min_quality_score: float = 0.25,
+    exclude_duplicate_evidence: bool = True,
+    use_lmstudio_labels: bool = True,
+    max_clusters: int = 60,
+    evidence_per_claim: int = 3,
 ) -> AnalysisPipelineResult:
     model_name = embedding_model or DEFAULT_EMBEDDING_MODEL
     with connect() as conn:
@@ -123,21 +317,32 @@ def run_local_analysis(
             message="No reviews matched the requested analysis scope.",
         )
 
+    quality_rows = _score_review_quality(reviews)
+    quality_by_id = {row.review_id: row for row in quality_rows}
+    clustering_reviews = _select_cluster_candidates(reviews, quality_by_id, min_quality_score)
+
     embedding_rows: list[list[float]] | None = None
     try:
-        groups, embedding_rows, device = _cluster_with_semantic_embeddings(reviews, model_name, min_cluster_size)
+        groups, embedding_rows, device = _cluster_with_semantic_embeddings(
+            clustering_reviews,
+            model_name,
+            min_cluster_size,
+            app_id,
+            max_clusters,
+            quality_by_id,
+        )
         clusterer = f"sentence_transformers_minibatch_kmeans_{device}"
         message = f"Analysis completed with GPU-ready semantic embeddings ({model_name}) on {device}."
     except Exception as exc:
         try:
-            groups = _cluster_with_sklearn(reviews, min_cluster_size)
+            groups = _cluster_with_sklearn(clustering_reviews, min_cluster_size, app_id, max_clusters, quality_by_id)
             clusterer = "sklearn_tfidf_kmeans"
             message = (
                 "Semantic embedding path unavailable; completed with local TF-IDF clustering "
                 f"({exc.__class__.__name__})."
             )
         except Exception as fallback_exc:
-            groups = _cluster_with_keywords(reviews)
+            groups = _cluster_with_keywords(clustering_reviews, app_id, quality_by_id)
             clusterer = "keyword_fallback"
             message = (
                 "Semantic and TF-IDF clustering failed; used keyword fallback "
@@ -145,11 +350,21 @@ def run_local_analysis(
             )
 
     if generate_ai_summary and llm_provider in {"lmstudio", "lm_studio"}:
-        message += " LM Studio summary enhancement is available through the configured local server; cluster labels remain deterministic in this run."
+        groups = _enrich_cluster_insights(groups, app_id, use_lmstudio_labels, llm_model)
+        message += " Cluster labels and actions were enriched through LM Studio when available."
+    else:
+        groups = _enrich_cluster_insights(groups, app_id, False, llm_model)
 
     with connect() as conn:
-        _store_embeddings(conn, reviews, model_name, embedding_rows)
-        clusters_created, evidence_created = _store_analysis_outputs(conn, analysis_run_id, groups)
+        _store_review_quality(conn, analysis_run_id, quality_rows)
+        _store_embeddings(conn, clustering_reviews, model_name, embedding_rows)
+        clusters_created, evidence_created = _store_analysis_outputs(
+            conn,
+            analysis_run_id,
+            groups,
+            evidence_per_claim=evidence_per_claim,
+            exclude_duplicate_evidence=exclude_duplicate_evidence,
+        )
         _store_analysis_report(conn, analysis_run_id, app_id, reviews, clusters_created, clusterer)
 
     return AnalysisPipelineResult(
@@ -281,10 +496,111 @@ def _load_reviews(conn: duckdb.DuckDBPyConnection, app_id: str | None, scope: st
     )
 
 
+def _score_review_quality(reviews: list[dict[str, Any]]) -> list[ReviewQuality]:
+    base_rows: list[dict[str, Any]] = []
+    counts: Counter[str] = Counter()
+    for row in reviews:
+        normalized = _normalize_review_text(str(row.get("review") or ""))
+        text_hash = hashlib.blake2b(normalized.encode("utf-8"), digest_size=12).hexdigest()
+        counts[text_hash] += 1
+        base_rows.append({**row, "_normalized_text": normalized, "_text_hash": text_hash})
+
+    scored: list[ReviewQuality] = []
+    for row in base_rows:
+        text = str(row.get("review") or "")
+        normalized = str(row["_normalized_text"])
+        tokens = _tokens(text)
+        unique_tokens = set(tokens)
+        flags: list[str] = []
+        if len(normalized) < 12 or len(tokens) <= 1:
+            flags.append("very_short")
+        if normalized in LOW_INFORMATION_PHRASES or _looks_like_low_information(normalized, tokens):
+            flags.append("low_information")
+        duplicate_count = counts[str(row["_text_hash"])]
+        if duplicate_count > 1:
+            flags.append("duplicate")
+        if not re.search(r"[A-Za-z가-힣ぁ-んァ-ン一-龥]", normalized):
+            flags.append("no_words")
+
+        weighted = max(0.0, min(float(row.get("weighted_vote_score") or 0), 1.0))
+        length_score = min(len(normalized) / 260, 0.38)
+        diversity_score = min(len(unique_tokens) / 14, 0.28)
+        vote_score = min(math.log1p(int(row.get("votes_up") or 0)) / 8, 0.08)
+        score = 0.16 + length_score + diversity_score + weighted * 0.16 + vote_score
+        if "very_short" in flags:
+            score -= 0.28
+        if "low_information" in flags:
+            score -= 0.28
+        if "duplicate" in flags:
+            score -= min(0.18, 0.04 * math.log2(duplicate_count + 1))
+        if "no_words" in flags:
+            score -= 0.18
+        score = max(0.0, min(score, 1.0))
+        scored.append(
+            ReviewQuality(
+                review_id=str(row["recommendation_id"]),
+                normalized_text=normalized,
+                text_hash=str(row["_text_hash"]),
+                quality_score=score,
+                quality_flags=flags,
+                duplicate_count=duplicate_count,
+            )
+        )
+    return scored
+
+
+def _select_cluster_candidates(
+    reviews: list[dict[str, Any]],
+    quality_by_id: dict[str, ReviewQuality],
+    min_quality_score: float,
+) -> list[dict[str, Any]]:
+    best_by_hash: dict[str, dict[str, Any]] = {}
+    for row in reviews:
+        quality = quality_by_id.get(str(row["recommendation_id"]))
+        if not quality or quality.quality_score < min_quality_score:
+            continue
+        current = best_by_hash.get(quality.text_hash)
+        if current is None:
+            best_by_hash[quality.text_hash] = row
+            continue
+        current_quality = quality_by_id.get(str(current["recommendation_id"]))
+        if not current_quality or quality.quality_score > current_quality.quality_score:
+            best_by_hash[quality.text_hash] = row
+
+    candidates = list(best_by_hash.values())
+    minimum = max(10, min(50, len(reviews) // 10))
+    if len(candidates) >= minimum:
+        return candidates
+    return reviews
+
+
+def _normalize_review_text(text: str) -> str:
+    compact = re.sub(r"\s+", " ", text.casefold()).strip()
+    compact = re.sub(r"https?://\S+", "", compact)
+    compact = re.sub(r"[\u200b-\u200f]", "", compact)
+    compact = re.sub(r"([!?.,~])\1{2,}", r"\1\1", compact)
+    return compact.strip()
+
+
+def _looks_like_low_information(normalized: str, tokens: list[str]) -> bool:
+    if not normalized:
+        return True
+    if len(tokens) <= 2 and len(normalized) <= 18:
+        return True
+    if len(set(normalized.replace(" ", ""))) <= 3 and len(normalized) <= 24:
+        return True
+    if re.fullmatch(r"[\W_0-9]+", normalized):
+        return True
+    return False
+
+
 def _cluster_with_semantic_embeddings(
     reviews: list[dict[str, Any]],
     model_name: str,
     min_cluster_size: int,
+    app_id: str | None,
+    max_clusters: int,
+    quality_by_id: dict[str, ReviewQuality],
 ) -> tuple[list[dict[str, Any]], list[list[float]], str]:
     if model_name == LOCAL_HASH_EMBEDDING_MODEL:
         raise RuntimeError("local hash embeddings are only used as a storage fallback")
@@ -306,7 +622,7 @@ def _cluster_with_semantic_embeddings(
         normalize_embeddings=True,
     )
     embeddings = np.asarray(embeddings, dtype=np.float32)
-    cluster_count = max(1, min(40, len(reviews) // max(min_cluster_size, 1)))
+    cluster_count = max(1, min(max_clusters, len(reviews) // max(min_cluster_size, 1)))
     if cluster_count == 1:
         labels = np.zeros(len(reviews), dtype=np.int32)
         scores = np.ones(len(reviews), dtype=np.float32)
@@ -327,8 +643,12 @@ def _cluster_with_semantic_embeddings(
 
     grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for row, label, score in zip(reviews, labels, scores, strict=True):
-        grouped[int(label)].append({"row": row, "score": max(0.0, min(float(score), 1.0))})
-    return [_describe_group(members) for members in grouped.values()], embeddings.tolist(), device
+        grouped[int(label)].append({
+            "row": row,
+            "score": max(0.0, min(float(score), 1.0)),
+            "quality": quality_by_id.get(str(row["recommendation_id"])),
+        })
+    return [_describe_group(members, app_id, quality_by_id) for members in grouped.values()], embeddings.tolist(), device
 
 
 def _embedding_text(model_name: str, text: str) -> str:
@@ -338,7 +658,13 @@ def _embedding_text(model_name: str, text: str) -> str:
     return compact
 
 
-def _cluster_with_sklearn(reviews: list[dict[str, Any]], min_cluster_size: int) -> list[dict[str, Any]]:
+def _cluster_with_sklearn(
+    reviews: list[dict[str, Any]],
+    min_cluster_size: int,
+    app_id: str | None,
+    max_clusters: int,
+    quality_by_id: dict[str, ReviewQuality],
+) -> list[dict[str, Any]]:
     from sklearn.cluster import KMeans
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.metrics.pairwise import cosine_similarity
@@ -346,7 +672,7 @@ def _cluster_with_sklearn(reviews: list[dict[str, Any]], min_cluster_size: int) 
     texts = [row["review"] or "" for row in reviews]
     vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), min_df=1, max_features=8000)
     matrix = vectorizer.fit_transform(texts)
-    cluster_count = max(1, min(20, len(reviews) // max(min_cluster_size, 1)))
+    cluster_count = max(1, min(max_clusters, len(reviews) // max(min_cluster_size, 1)))
     if cluster_count == 1:
         labels = [0 for _ in reviews]
         scores = [1.0 for _ in reviews]
@@ -358,32 +684,51 @@ def _cluster_with_sklearn(reviews: list[dict[str, Any]], min_cluster_size: int) 
 
     grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for row, label, score in zip(reviews, labels, scores, strict=True):
-        grouped[int(label)].append({"row": row, "score": max(0.0, min(score, 1.0))})
-    return [_describe_group(members) for members in grouped.values()]
+        grouped[int(label)].append({
+            "row": row,
+            "score": max(0.0, min(score, 1.0)),
+            "quality": quality_by_id.get(str(row["recommendation_id"])),
+        })
+    return [_describe_group(members, app_id, quality_by_id) for members in grouped.values()]
 
 
-def _cluster_with_keywords(reviews: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _cluster_with_keywords(
+    reviews: list[dict[str, Any]],
+    app_id: str | None,
+    quality_by_id: dict[str, ReviewQuality],
+) -> list[dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    themes = [*GAME_THEMES.get(str(app_id or ""), []), *THEMES]
     for row in reviews:
         text = str(row.get("review") or "").lower()
-        matches = [(theme, len(re.findall(theme.pattern, text, flags=re.IGNORECASE))) for theme in THEMES]
+        matches = [(theme, len(re.findall(theme.pattern, text, flags=re.IGNORECASE))) for theme in themes]
         theme, count = max(matches, key=lambda item: item[1])
         if count <= 0:
-            grouped["misc"].append({"row": row, "score": 0.55})
+            grouped["misc"].append({"row": row, "score": 0.55, "quality": quality_by_id.get(str(row["recommendation_id"]))})
         else:
-            grouped[theme.key].append({"row": row, "score": min(1.0, 0.62 + count * 0.12)})
-    return [_describe_group(members) for members in grouped.values() if members]
+            grouped[theme.key].append({
+                "row": row,
+                "score": min(1.0, 0.62 + count * 0.12),
+                "quality": quality_by_id.get(str(row["recommendation_id"])),
+            })
+    return [_describe_group(members, app_id, quality_by_id) for members in grouped.values() if members]
 
 
-def _describe_group(members: list[dict[str, Any]]) -> dict[str, Any]:
+def _describe_group(
+    members: list[dict[str, Any]],
+    app_id: str | None,
+    quality_by_id: dict[str, ReviewQuality],
+) -> dict[str, Any]:
     rows = [member["row"] for member in members]
     sentiment = _sentiment(rows)
-    best_theme = _best_theme(rows)
+    best_theme = _best_theme(rows, app_id)
     keywords = _keywords(rows)
     language = _dominant_language(rows)
+    positive_ratio = _positive_ratio(rows)
+    quality_warning = _quality_warning(rows, quality_by_id)
     if best_theme:
         label = best_theme.label
-        summary = f"{len(rows)}개 리뷰에서 {best_theme.summary} 긍정 비율은 {_positive_ratio(rows):.0%}입니다."
+        summary = f"{len(rows)}개 리뷰에서 {best_theme.summary} 긍정 비율은 {positive_ratio:.0%}입니다."
     else:
         if sentiment == "positive":
             label = "긍정 경험 묶음"
@@ -391,6 +736,8 @@ def _describe_group(members: list[dict[str, Any]]) -> dict[str, Any]:
             label = "개선 요청 묶음"
         else:
             label = "혼합 의견 묶음"
+        if keywords:
+            label = f"{keywords[0]} 중심 의견"
         keyword_text = ", ".join(keywords[:4]) if keywords else "공통 표현 부족"
         summary = f"{len(rows)}개 리뷰가 유사한 표현으로 묶였습니다. 주요 단어는 {keyword_text}이며 긍정 비율은 {_positive_ratio(rows):.0%}입니다."
     return {
@@ -400,7 +747,189 @@ def _describe_group(members: list[dict[str, Any]]) -> dict[str, Any]:
         "language": language,
         "reviews": members,
         "keywords": keywords,
+        "positive_ratio": positive_ratio,
+        "quality_warning": quality_warning,
     }
+
+
+def _enrich_cluster_insights(
+    groups: list[dict[str, Any]],
+    app_id: str | None,
+    use_lmstudio: bool,
+    llm_model: str | None,
+) -> list[dict[str, Any]]:
+    enriched = []
+    for group in groups:
+        insight = _deterministic_cluster_insight(group, app_id)
+        if use_lmstudio:
+            insight = _lmstudio_cluster_insight(group, insight, app_id, llm_model) or insight
+        enriched.append({**group, "insight": insight})
+    return enriched
+
+
+def _deterministic_cluster_insight(group: dict[str, Any], app_id: str | None) -> ClusterInsight:
+    rows = [member["row"] for member in group["reviews"]]
+    positive_ratio = float(group.get("positive_ratio") or _positive_ratio(rows))
+    title = str(group["label"])
+    warning = group.get("quality_warning")
+    keyword_text = ", ".join(group.get("keywords") or [])
+    sentiment_text = "호평" if positive_ratio >= 0.65 else "불만" if positive_ratio <= 0.45 else "호평과 불만이 섞인 반응"
+    summary = (
+        f"{len(rows)}개 품질 필터 통과 리뷰에서 {title} 관련 {sentiment_text}이 관측됩니다. "
+        f"추천 비율은 {positive_ratio:.0%}입니다."
+    )
+    if keyword_text:
+        summary += f" 주요 표현은 {keyword_text}입니다."
+
+    praise = f"{title}을 긍정적으로 언급한 리뷰가 있습니다." if positive_ratio > 0 else ""
+    pain_point = f"{title}에 대한 불만 또는 주의 신호가 있습니다." if positive_ratio < 1 else ""
+    planner_action = _planner_action_for(title, positive_ratio, app_id)
+    marketing_angle = f"{title} 관련 호평은 스토어 문구나 패치 노트에서 강점 근거로 검토할 수 있습니다."
+    warnings = [warning] if warning else []
+    confidence = 0.7
+    if warning:
+        confidence -= 0.15
+    if len(rows) < 30:
+        confidence -= 0.1
+    return ClusterInsight(
+        title=title,
+        summary=summary,
+        praise=praise,
+        pain_point=pain_point,
+        planner_action=planner_action,
+        marketing_angle=marketing_angle,
+        confidence=max(0.3, min(confidence, 0.9)),
+        warnings=warnings,
+    )
+
+
+def _planner_action_for(title: str, positive_ratio: float, app_id: str | None) -> str:
+    if positive_ratio <= 0.45:
+        return f"{title} 불만 원문을 우선 확인하고 다음 패치/공지에서 대응 여부를 정리하세요."
+    if positive_ratio < 0.65:
+        return f"{title}은 호불호가 갈립니다. 언어권과 최근 기간별로 나눠 원인을 분리하세요."
+    if str(app_id or "") == "730" and ("치터" in title or "서버" in title or "매치" in title):
+        return f"{title} 신호는 운영 신뢰와 직접 연결되므로 최근 불만 리뷰를 별도로 추적하세요."
+    return f"{title} 호평은 유지해야 할 강점으로 기록하고, 불만 샘플이 있는지 함께 점검하세요."
+
+
+def _lmstudio_cluster_insight(
+    group: dict[str, Any],
+    fallback: ClusterInsight,
+    app_id: str | None,
+    llm_model: str | None,
+) -> ClusterInsight | None:
+    samples = _rank_members(group["reviews"])[:12]
+    sample_text = "\n".join(
+        f"- {'추천' if member['row'].get('voted_up') else '비추천'} / {member['row'].get('language')}: "
+        f"{_quote(member['row'].get('review') or '')}"
+        for member in samples
+    )
+    prompt = (
+        "Steam 리뷰 클러스터를 게임 기획자가 읽을 수 있게 한국어 JSON으로만 요약하세요. "
+        "과장하지 말고 원문에 없는 사실을 만들지 마세요. "
+        f"Steam app_id={app_id}. 기존 라벨={group['label']}. 추천율={float(group.get('positive_ratio') or 0):.0%}.\n"
+        f"샘플:\n{sample_text}\n"
+        'JSON keys: title, summary, praise, pain_point, planner_action, marketing_angle, confidence, warnings'
+    )
+    try:
+        with httpx.Client(timeout=45) as client:
+            model = _lmstudio_default_model_sync(client, llm_model)
+            body: dict[str, Any] = {
+                "input": prompt,
+                "context_length": 8000,
+            }
+            if model:
+                body["model"] = model
+            response = client.post(
+                f"{LM_STUDIO_NATIVE_BASE_URL}/chat",
+                json=body,
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except Exception:
+        return None
+
+    raw = _extract_lmstudio_text(payload)
+    if isinstance(raw, dict):
+        raw = json.dumps(raw)
+    match = re.search(r"\{.*\}", str(raw), flags=re.DOTALL)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
+    return ClusterInsight(
+        title=str(data.get("title") or fallback.title)[:80],
+        summary=str(data.get("summary") or fallback.summary),
+        praise=str(data.get("praise") or fallback.praise),
+        pain_point=str(data.get("pain_point") or fallback.pain_point),
+        planner_action=str(data.get("planner_action") or fallback.planner_action),
+        marketing_angle=str(data.get("marketing_angle") or fallback.marketing_angle),
+        confidence=max(0.0, min(float(data.get("confidence") or fallback.confidence), 1.0)),
+        warnings=_coerce_string_list(data.get("warnings", fallback.warnings)),
+    )
+
+
+def _extract_lmstudio_text(payload: dict[str, Any]) -> str:
+    for key in ("output", "content", "text"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            parts = []
+            for item in value:
+                if isinstance(item, dict):
+                    text = item.get("text") or item.get("content") or item.get("message")
+                    if isinstance(text, list):
+                        text = " ".join(str(part.get("text") if isinstance(part, dict) else part) for part in text)
+                    parts.append(str(text or ""))
+                else:
+                    parts.append(str(item))
+            return " ".join(part for part in parts if part)
+    message = payload.get("message")
+    if isinstance(message, str):
+        return message
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+    choices = payload.get("choices")
+    if isinstance(choices, list) and choices:
+        first = choices[0]
+        if isinstance(first, dict):
+            choice_message = first.get("message")
+            if isinstance(choice_message, dict) and isinstance(choice_message.get("content"), str):
+                return choice_message["content"]
+            if isinstance(first.get("text"), str):
+                return first["text"]
+    return ""
+
+
+def _coerce_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    return [str(value)] if str(value).strip() else []
+
+
+def _lmstudio_default_model_sync(client: httpx.Client, preferred_model: str | None = None) -> str | None:
+    try:
+        response = client.get(f"{LM_STUDIO_NATIVE_BASE_URL}/models")
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return None
+    rows = payload.get("models") or []
+    llm = [str(item.get("key")) for item in rows if item.get("type") == "llm" and item.get("key")]
+    if preferred_model and preferred_model in llm:
+        return preferred_model
+    models = [str(item.get("key")) for item in rows if item.get("key")]
+    return llm[0] if llm else models[0] if models else None
 
 
 def _store_embeddings(
@@ -435,61 +964,232 @@ def _store_embeddings(
     )
 
 
+def _store_review_quality(
+    conn: duckdb.DuckDBPyConnection,
+    analysis_run_id: int,
+    quality_rows: list[ReviewQuality],
+) -> None:
+    if not quality_rows:
+        return
+    conn.executemany(
+        """
+        INSERT INTO review_quality (
+            analysis_run_id, review_id, normalized_text, text_hash,
+            quality_score, quality_flags, duplicate_count
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (analysis_run_id, review_id) DO UPDATE SET
+            normalized_text = excluded.normalized_text,
+            text_hash = excluded.text_hash,
+            quality_score = excluded.quality_score,
+            quality_flags = excluded.quality_flags,
+            duplicate_count = excluded.duplicate_count
+        """,
+        [
+            (
+                analysis_run_id,
+                row.review_id,
+                row.normalized_text,
+                row.text_hash,
+                row.quality_score,
+                json.dumps(row.quality_flags),
+                row.duplicate_count,
+            )
+            for row in quality_rows
+        ],
+    )
+
+
 def _store_analysis_outputs(
     conn: duckdb.DuckDBPyConnection,
     analysis_run_id: int,
     groups: list[dict[str, Any]],
+    *,
+    evidence_per_claim: int,
+    exclude_duplicate_evidence: bool,
 ) -> tuple[int, int]:
     clusters_created = 0
     evidence_created = 0
+    used_evidence_hashes: set[str] = set()
     for group in sorted(groups, key=lambda item: len(item["reviews"]), reverse=True):
         ranked_members = _rank_members(group["reviews"])
         rows = [member["row"] for member in ranked_members]
         review_count = len(rows)
         avg_score = sum(float(row.get("weighted_vote_score") or 0) for row in rows) / review_count
         exemplar = rows[0]["recommendation_id"]
+        insight = group["insight"]
         cluster_id = conn.execute(
             """
             INSERT INTO clusters (
                 analysis_run_id, label, summary, sentiment, language, review_count,
-                avg_weighted_score, exemplar_review_id
+                avg_weighted_score, exemplar_review_id, positive_ratio, top_keywords, quality_warning
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
             """,
             [
                 analysis_run_id,
-                group["label"],
-                group["summary"],
+                insight.title,
+                insight.summary,
                 group["sentiment"],
                 group["language"],
                 review_count,
                 avg_score,
                 exemplar,
+                group["positive_ratio"],
+                json.dumps(group["keywords"]),
+                group["quality_warning"],
             ],
         ).fetchone()[0]
+        _insert_cluster_insight(conn, cluster_id, insight)
         clusters_created += 1
         conn.executemany(
             "INSERT INTO review_clusters (review_id, cluster_id, score) VALUES (?, ?, ?)",
             [(member["row"]["recommendation_id"], cluster_id, member["score"]) for member in ranked_members],
         )
-        for member in ranked_members[:3]:
-            row = member["row"]
-            conn.execute(
+        for claim_type, claim_text in _claim_specs_for_group(group, insight):
+            claim_id = conn.execute(
                 """
-                INSERT INTO evidence (analysis_run_id, review_id, cluster_id, quote, evidence_type, note)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO claims (analysis_run_id, cluster_id, claim_type, claim_text, confidence)
+                VALUES (?, ?, ?, ?, ?) RETURNING id
                 """,
-                [
-                    analysis_run_id,
-                    row["recommendation_id"],
-                    cluster_id,
-                    _quote(row["review"]),
-                    _evidence_type(group["sentiment"]),
-                    f"Representative review score {member['representative_score']:.2f}",
-                ],
+                [analysis_run_id, cluster_id, claim_type, claim_text, insight.confidence],
+            ).fetchone()[0]
+            evidence_members = _select_evidence_members(
+                ranked_members,
+                claim_type,
+                evidence_per_claim,
+                used_evidence_hashes,
+                exclude_duplicate_evidence,
             )
-            evidence_created += 1
+            for member in evidence_members:
+                row = member["row"]
+                quality = member.get("quality")
+                conn.execute(
+                    """
+                    INSERT INTO evidence (
+                        analysis_run_id, claim_id, review_id, cluster_id, quote,
+                        evidence_type, evidence_role, note, quality_score
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        analysis_run_id,
+                        claim_id,
+                        row["recommendation_id"],
+                        cluster_id,
+                        _quote(row["review"]),
+                        _evidence_type(claim_type),
+                        claim_type,
+                        f"{_evidence_role_label(claim_type)} · 품질 {member['representative_score']:.2f}",
+                        quality.quality_score if quality else None,
+                    ],
+                )
+                evidence_created += 1
     return clusters_created, evidence_created
+
+
+def _insert_cluster_insight(conn: duckdb.DuckDBPyConnection, cluster_id: int, insight: ClusterInsight) -> None:
+    conn.execute(
+        """
+        INSERT INTO cluster_insights (
+            cluster_id, title, summary, praise, pain_point,
+            planner_action, marketing_angle, confidence, warnings
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            cluster_id,
+            insight.title,
+            insight.summary,
+            insight.praise,
+            insight.pain_point,
+            insight.planner_action,
+            insight.marketing_angle,
+            insight.confidence,
+            json.dumps(insight.warnings),
+        ],
+    )
+
+
+def _claim_specs_for_group(group: dict[str, Any], insight: ClusterInsight) -> list[tuple[str, str]]:
+    rows = [member["row"] for member in group["reviews"]]
+    has_praise = any(row.get("voted_up") for row in rows)
+    has_complaint = any(not row.get("voted_up") for row in rows)
+    claims: list[tuple[str, str]] = []
+    if has_complaint:
+        claims.append(("complaint", insight.pain_point or f"{insight.title} 관련 불만 신호가 있습니다."))
+    if has_praise:
+        claims.append(("praise", insight.praise or f"{insight.title} 관련 호평 신호가 있습니다."))
+    if not claims:
+        claims.append(("representative", insight.summary))
+    return claims[:2]
+
+
+def _select_evidence_members(
+    ranked_members: list[dict[str, Any]],
+    role: str,
+    limit: int,
+    used_hashes: set[str],
+    exclude_duplicates: bool,
+) -> list[dict[str, Any]]:
+    def role_match(member: dict[str, Any]) -> bool:
+        voted_up = bool(member["row"].get("voted_up"))
+        if role == "complaint":
+            return not voted_up
+        if role == "praise":
+            return voted_up
+        return True
+
+    selected: list[dict[str, Any]] = []
+    candidates = [member for member in ranked_members if role_match(member)]
+    if not candidates:
+        candidates = ranked_members
+
+    for member in candidates:
+        quality = member.get("quality")
+        text_hash = _text_hash(_quote(str(member["row"].get("review") or "")))
+        if exclude_duplicates and text_hash in used_hashes:
+            continue
+        if quality and quality.quality_score < 0.2 and len(candidates) > limit:
+            continue
+        selected.append(member)
+        used_hashes.add(text_hash)
+        if len(selected) >= limit:
+            break
+
+    if len(selected) < limit:
+        for member in candidates:
+            if member in selected:
+                continue
+            text_hash = _text_hash(_quote(str(member["row"].get("review") or "")))
+            if exclude_duplicates and text_hash in used_hashes:
+                continue
+            selected.append(member)
+            used_hashes.add(text_hash)
+            if len(selected) >= limit:
+                break
+    if not selected and candidates:
+        member = candidates[0]
+        text_hash = _text_hash(_quote(str(member["row"].get("review") or "")))
+        selected.append(member)
+        used_hashes.add(text_hash)
+    return selected
+
+
+def _text_hash(text: str) -> str:
+    return hashlib.blake2b(_normalize_review_text(text).encode("utf-8"), digest_size=12).hexdigest()
+
+
+def _evidence_role_label(role: str) -> str:
+    if role == "complaint":
+        return "구체적 불만"
+    if role == "praise":
+        return "구체적 호평"
+    if role == "recent":
+        return "최근 리뷰"
+    if role == "high_weight":
+        return "고가중치 리뷰"
+    return "대표 리뷰"
 
 
 def _store_analysis_report(
@@ -534,18 +1234,39 @@ def _rank_members(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ranked = []
     for member in members:
         row = member["row"]
+        quality = member.get("quality")
         length_score = min(len(str(row.get("review") or "")) / 500, 1.0)
         weighted_score = max(0.0, min(float(row.get("weighted_vote_score") or 0), 1.0))
-        representative_score = member["score"] * 0.55 + weighted_score * 0.3 + length_score * 0.15
-        ranked.append({**member, "representative_score": representative_score})
+        quality_score = quality.quality_score if quality else 0.5
+        representative_score = member["score"] * 0.45 + quality_score * 0.35 + weighted_score * 0.15 + length_score * 0.05
+        ranked.append({**member, "quality": quality, "representative_score": representative_score})
     return sorted(ranked, key=lambda item: item["representative_score"], reverse=True)
 
 
-def _best_theme(rows: list[dict[str, Any]]) -> Theme | None:
+def _best_theme(rows: list[dict[str, Any]], app_id: str | None = None) -> Theme | None:
     text = "\n".join(str(row.get("review") or "").lower() for row in rows)
-    counts = [(theme, len(re.findall(theme.pattern, text, flags=re.IGNORECASE))) for theme in THEMES]
+    themes = [*GAME_THEMES.get(str(app_id or ""), []), *THEMES]
+    counts = [(theme, len(re.findall(theme.pattern, text, flags=re.IGNORECASE))) for theme in themes]
     theme, count = max(counts, key=lambda item: item[1])
     return theme if count > 0 else None
+
+
+def _quality_warning(rows: list[dict[str, Any]], quality_by_id: dict[str, ReviewQuality]) -> str | None:
+    if not rows:
+        return None
+    qualities = [quality_by_id.get(str(row["recommendation_id"])) for row in rows]
+    qualities = [quality for quality in qualities if quality]
+    if not qualities:
+        return None
+    low_info = sum(1 for quality in qualities if "low_information" in quality.quality_flags or "very_short" in quality.quality_flags)
+    duplicates = sum(1 for quality in qualities if "duplicate" in quality.quality_flags)
+    if low_info / len(qualities) >= 0.45:
+        return "짧거나 정보량이 낮은 리뷰가 많은 묶음"
+    if duplicates / len(qualities) >= 0.35:
+        return "중복 표현이 많은 묶음"
+    if len(rows) < 20:
+        return "표본이 작은 묶음"
+    return None
 
 
 def _sentiment(rows: list[dict[str, Any]]) -> str:
@@ -585,9 +1306,9 @@ def _quote(text: str) -> str:
     return compact[:300]
 
 
-def _evidence_type(sentiment: str) -> str:
-    if sentiment == "positive":
+def _evidence_type(role: str) -> str:
+    if role == "praise":
         return "praise"
-    if sentiment == "negative":
+    if role == "complaint":
         return "pain_point"
     return "representative"

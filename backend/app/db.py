@@ -16,6 +16,7 @@ CREATE SEQUENCE IF NOT EXISTS evidence_id_seq START 1;
 CREATE SEQUENCE IF NOT EXISTS report_id_seq START 1;
 CREATE SEQUENCE IF NOT EXISTS job_id_seq START 1;
 CREATE SEQUENCE IF NOT EXISTS analysis_run_id_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS claim_id_seq START 1;
 
 CREATE TABLE IF NOT EXISTS games (
     app_id VARCHAR PRIMARY KEY,
@@ -68,6 +69,9 @@ CREATE TABLE IF NOT EXISTS clusters (
     review_count INTEGER NOT NULL DEFAULT 0,
     avg_weighted_score DOUBLE NOT NULL DEFAULT 0,
     exemplar_review_id VARCHAR,
+    positive_ratio DOUBLE,
+    top_keywords JSON,
+    quality_warning VARCHAR,
     created_at TIMESTAMP NOT NULL DEFAULT current_timestamp
 );
 
@@ -81,11 +85,49 @@ CREATE TABLE IF NOT EXISTS review_clusters (
 CREATE TABLE IF NOT EXISTS evidence (
     id BIGINT PRIMARY KEY DEFAULT nextval('evidence_id_seq'),
     analysis_run_id BIGINT,
+    claim_id BIGINT,
     review_id VARCHAR NOT NULL,
     cluster_id BIGINT,
     quote TEXT NOT NULL,
     evidence_type VARCHAR NOT NULL,
+    evidence_role VARCHAR,
     note TEXT,
+    quality_score DOUBLE,
+    created_at TIMESTAMP NOT NULL DEFAULT current_timestamp
+);
+
+CREATE TABLE IF NOT EXISTS review_quality (
+    analysis_run_id BIGINT NOT NULL,
+    review_id VARCHAR NOT NULL,
+    normalized_text TEXT NOT NULL,
+    text_hash VARCHAR NOT NULL,
+    quality_score DOUBLE NOT NULL,
+    quality_flags JSON,
+    duplicate_count INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
+    PRIMARY KEY (analysis_run_id, review_id)
+);
+
+CREATE TABLE IF NOT EXISTS cluster_insights (
+    cluster_id BIGINT PRIMARY KEY,
+    title VARCHAR NOT NULL,
+    summary TEXT NOT NULL,
+    praise TEXT,
+    pain_point TEXT,
+    planner_action TEXT,
+    marketing_angle TEXT,
+    confidence DOUBLE NOT NULL DEFAULT 0.5,
+    warnings JSON,
+    created_at TIMESTAMP NOT NULL DEFAULT current_timestamp
+);
+
+CREATE TABLE IF NOT EXISTS claims (
+    id BIGINT PRIMARY KEY DEFAULT nextval('claim_id_seq'),
+    analysis_run_id BIGINT,
+    cluster_id BIGINT,
+    claim_type VARCHAR NOT NULL,
+    claim_text TEXT NOT NULL,
+    confidence DOUBLE NOT NULL DEFAULT 0.5,
     created_at TIMESTAMP NOT NULL DEFAULT current_timestamp
 );
 
@@ -174,7 +216,13 @@ def run_migrations(conn: duckdb.DuckDBPyConnection) -> None:
     _add_column_if_missing(conn, "games", "status", "VARCHAR")
     _add_column_if_missing(conn, "events", "app_id", "VARCHAR")
     _add_column_if_missing(conn, "clusters", "analysis_run_id", "BIGINT")
+    _add_column_if_missing(conn, "clusters", "positive_ratio", "DOUBLE")
+    _add_column_if_missing(conn, "clusters", "top_keywords", "JSON")
+    _add_column_if_missing(conn, "clusters", "quality_warning", "VARCHAR")
     _add_column_if_missing(conn, "evidence", "analysis_run_id", "BIGINT")
+    _add_column_if_missing(conn, "evidence", "claim_id", "BIGINT")
+    _add_column_if_missing(conn, "evidence", "evidence_role", "VARCHAR")
+    _add_column_if_missing(conn, "evidence", "quality_score", "DOUBLE")
     _add_column_if_missing(conn, "reports", "analysis_run_id", "BIGINT")
     _add_column_if_missing(conn, "reports", "app_id", "VARCHAR")
 

@@ -93,6 +93,19 @@
     review_count: number;
     avg_weighted_score: number;
     exemplar_review_id?: string | null;
+    positive_ratio?: number | null;
+    top_keywords?: string[] | null;
+    quality_warning?: string | null;
+    insight?: {
+      title?: string | null;
+      summary?: string | null;
+      praise?: string | null;
+      pain_point?: string | null;
+      planner_action?: string | null;
+      marketing_angle?: string | null;
+      confidence?: number | null;
+      warnings?: string[] | null;
+    } | null;
     created_at?: string;
   };
 
@@ -104,16 +117,34 @@
     weighted_vote_score: number;
     playtime_at_review: number;
     cluster_score?: number;
+    quality_score?: number | null;
+    quality_flags?: string[] | null;
+    duplicate_count?: number | null;
     steam_created_at?: string | null;
   };
 
   type ApiEvidence = {
     id: number;
+    claim_id?: number | null;
     review_id: string;
     cluster_id: number | null;
     quote: string;
     evidence_type: string;
+    evidence_role?: string | null;
     note: string | null;
+    quality_score?: number | null;
+    claim_text?: string | null;
+    claim_type?: string | null;
+    created_at: string;
+  };
+
+  type ApiClaim = {
+    id: number;
+    analysis_run_id?: number | null;
+    cluster_id?: number | null;
+    claim_type: string;
+    claim_text: string;
+    confidence: number;
     created_at: string;
   };
 
@@ -215,6 +246,10 @@
     tags: string[];
     backend: boolean;
     samples: ReviewSample[];
+    positiveRatio: number | null;
+    keywords: string[];
+    qualityWarning: string | null;
+    insight: NonNullable<ApiCluster['insight']> | null;
   };
 
   type ReviewSample = {
@@ -224,6 +259,9 @@
     reactionTone: Tone;
     text: string;
     score: string;
+    quality: string;
+    flags: string[];
+    duplicateCount: number;
   };
 
   type EventImpactView = {
@@ -361,6 +399,10 @@
       description: '샘플 데이터입니다. 장기 플레이에서 반복성, 보상 변화 부족, 루프 피로가 함께 언급됩니다.',
       tags: ['샘플', 'EN/KO', '비추천 연결 높음'],
       backend: false,
+      positiveRatio: 0.42,
+      keywords: ['반복', '보상', '후반'],
+      qualityWarning: null,
+      insight: null,
       samples: [
         {
           language: 'EN',
@@ -368,7 +410,10 @@
           reaction: '비추천',
           reactionTone: 'bad',
           text: 'The combat is still great, but every run after the credits feels like chasing tiny upgrades.',
-          score: '94%'
+          score: '94%',
+          quality: '92%',
+          flags: [],
+          duplicateCount: 1
         },
         {
           language: 'KO',
@@ -376,7 +421,10 @@
           reaction: '혼합',
           reactionTone: 'mixed',
           text: '초반은 정말 좋은데, 어느 순간부터 보상 변화가 작아서 계속할 이유가 약해진다.',
-          score: '88%'
+          score: '88%',
+          quality: '90%',
+          flags: [],
+          duplicateCount: 1
         }
       ]
     },
@@ -389,6 +437,10 @@
       description: '샘플 데이터입니다. 타격감, 회피 리듬, 보스전 압박감이 강점으로 반복 언급됩니다.',
       tags: ['샘플', '전체 언어', '추천 연결 높음'],
       backend: false,
+      positiveRatio: 0.91,
+      keywords: ['전투', '보스', '리듬'],
+      qualityWarning: null,
+      insight: null,
       samples: [
         {
           language: 'EN',
@@ -396,7 +448,10 @@
           reaction: '추천',
           reactionTone: 'good',
           text: 'Every weapon has a rhythm, and boss fights keep me locked in without feeling cheap.',
-          score: '91%'
+          score: '91%',
+          quality: '89%',
+          flags: [],
+          duplicateCount: 1
         },
         {
           language: 'KO',
@@ -404,7 +459,10 @@
           reaction: '추천',
           reactionTone: 'good',
           text: '무기별 리듬이 달라서 전투가 계속 새롭고, 보스전 긴장감이 좋다.',
-          score: '87%'
+          score: '87%',
+          quality: '88%',
+          flags: [],
+          duplicateCount: 1
         }
       ]
     }
@@ -506,6 +564,7 @@
   let clusterSource: 'backend' | 'sample' | 'empty' = 'empty';
   let selectedReviews: ReviewSample[] = [];
   let evidenceItems: ApiEvidence[] = [];
+  let claims: ApiClaim[] = [];
   let reports: ApiReport[] = [];
   let analysisRuns: ApiAnalysisRun[] = [];
   let modelOptions: ModelOption[] = defaultModelOptions;
@@ -530,7 +589,13 @@
     embedding_model: 'intfloat/multilingual-e5-large',
     min_cluster_size: 20,
     generate_ai_summary: true,
-    llm_provider: 'lm_studio'
+    llm_provider: 'lm_studio',
+    llm_model: 'supergemma4-e4b-abliterated',
+    min_quality_score: 0.25,
+    exclude_duplicate_evidence: true,
+    use_lmstudio_labels: true,
+    max_clusters: 60,
+    evidence_per_claim: 3
   };
 
   let isCreatingEvent = false;
@@ -579,7 +644,7 @@
   $: positiveTopics = buildTopicRows('good');
   $: languageMetrics = buildLanguageMetrics(languages, dataSourceText);
   $: languageRows = buildLanguageRows(languages);
-  $: evidenceClaims = buildEvidenceClaims(evidenceItems);
+  $: claimRows = buildClaimRows(claims, evidenceItems);
   $: evidenceTableRows = buildEvidenceTableRows(evidenceItems);
   $: reportBlocks = buildReportBlocks(latestReport, dashboard, clusters, evidenceItems);
   $: analysisMetrics = buildAnalysisMetrics(dashboard, clusters, evidenceItems, reports, analysisJob, clusterSourceText);
@@ -706,6 +771,7 @@
       timelineResult,
       clustersResult,
       evidenceResult,
+      claimsResult,
       reportsResult,
       analysisRunsResult,
       modelsResult
@@ -716,6 +782,7 @@
       get<unknown>(`/timeline?${appQuery}&bucket=month`, '타임라인'),
       get<ApiCluster[]>(`/clusters?${appQuery}`, '클러스터'),
       get<ApiEvidence[]>(`/evidence?${appQuery}`, '근거'),
+      get<ApiClaim[]>(`/claims?${appQuery}`, '주장'),
       get<ApiReport[]>(`/reports?${appQuery}`, '리포트'),
       get<ApiAnalysisRun[]>(`/analysis-runs?${appQuery}`, '분석 이력'),
       loadModelOptions(warnings)
@@ -726,6 +793,7 @@
     events = Array.isArray(eventsResult) ? eventsResult : [];
     timelineRows = normalizeTimeline(timelineResult);
     evidenceItems = Array.isArray(evidenceResult) ? evidenceResult : [];
+    claims = Array.isArray(claimsResult) ? claimsResult : [];
     reports = Array.isArray(reportsResult) ? reportsResult : [];
     analysisRuns = Array.isArray(analysisRunsResult) ? analysisRunsResult : [];
     modelOptions = modelsResult;
@@ -804,6 +872,7 @@
         created_at: sampleDashboard.latest_review_at ?? new Date().toISOString()
       }))
     );
+    claims = [];
     reports = [];
     analysisRuns = [];
     modelOptions = defaultModelOptions;
@@ -868,7 +937,13 @@
           embedding_model: analysisOptions.embedding_model,
           min_cluster_size: Number(analysisOptions.min_cluster_size),
           generate_ai_summary: analysisOptions.generate_ai_summary,
-          llm_provider: analysisOptions.llm_provider
+          llm_provider: analysisOptions.llm_provider,
+          llm_model: analysisOptions.llm_model,
+          min_quality_score: Number(analysisOptions.min_quality_score),
+          exclude_duplicate_evidence: analysisOptions.exclude_duplicate_evidence,
+          use_lmstudio_labels: analysisOptions.use_lmstudio_labels,
+          max_clusters: Number(analysisOptions.max_clusters),
+          evidence_per_claim: Number(analysisOptions.evidence_per_claim)
         })
       });
       analysisJob = result.job ?? result;
@@ -904,7 +979,22 @@
     }
     selectedReviews = [];
     try {
-      const reviews = await requestJson<ApiReview[]>(`/clusters/${clusterId}/reviews?limit=8`);
+      const sampleTypes = cluster.tone === 'bad' ? ['complaint', 'representative', 'recent'] : cluster.tone === 'good' ? ['praise', 'complaint', 'recent'] : ['representative', 'complaint', 'praise'];
+      const batches = await Promise.all(
+        sampleTypes.map((sample) =>
+          requestJson<ApiReview[]>(`/clusters/${clusterId}/reviews?sample=${sample}&limit=5`).catch(() => [])
+        )
+      );
+      const seen = new Set<string>();
+      const reviews = batches
+        .flat()
+        .filter((review) => {
+          const key = normalizeVisibleText(review.review);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .slice(0, 10);
       selectedReviews = reviews.map(mapApiReview);
       clusters = clusters.map((item) => (item.id === clusterId ? { ...item, samples: selectedReviews } : item));
     } catch {
@@ -1197,20 +1287,26 @@
 
   function mapApiCluster(cluster: ApiCluster): ClusterView {
     const tone = sentimentTone(cluster.sentiment);
+    const keywords = Array.isArray(cluster.top_keywords) ? cluster.top_keywords : [];
+    const insight = cluster.insight ?? null;
     return {
       id: String(cluster.id),
-      title: cluster.label || `Cluster ${cluster.id}`,
+      title: insight?.title || cluster.label || `Cluster ${cluster.id}`,
       count: formatCount(cluster.review_count),
       countValue: cluster.review_count,
       tone,
-      description: cluster.summary || '아직 요약이 없습니다.',
+      description: insight?.summary || cluster.summary || '아직 요약이 없습니다.',
       tags: [
         cluster.language ? steamLanguageLabel(cluster.language) : '전체 언어',
         sentimentLabel(cluster.sentiment),
-        `대표도 ${formatPercent(cluster.avg_weighted_score)}`
-      ],
+        `추천율 ${formatPercent(cluster.positive_ratio ?? 0)}`
+      ].concat(keywords.slice(0, 3)),
       backend: true,
-      samples: []
+      samples: [],
+      positiveRatio: ratioMaybe(cluster.positive_ratio) ?? null,
+      keywords,
+      qualityWarning: cluster.quality_warning ?? null,
+      insight
     };
   }
 
@@ -1221,7 +1317,10 @@
       reaction: review.voted_up ? '추천' : '비추천',
       reactionTone: review.voted_up ? 'good' : 'bad',
       text: review.review,
-      score: formatPercent(review.cluster_score ?? review.weighted_vote_score)
+      score: formatPercent(review.cluster_score ?? review.weighted_vote_score),
+      quality: review.quality_score === null || review.quality_score === undefined ? '미상' : formatPercent(review.quality_score),
+      flags: Array.isArray(review.quality_flags) ? review.quality_flags : [],
+      duplicateCount: numberFrom(review.duplicate_count)
     };
   }
 
@@ -1550,23 +1649,28 @@
     ]);
   }
 
-  function buildEvidenceClaims(items: ApiEvidence[]): string[][] {
-    const rows = items.slice(0, 4).map((item) => [
-      evidenceClaimTitle(item),
-      item.quote,
-      evidenceTypeLabel(item.evidence_type),
-      item.evidence_type === 'ai' ? 'ai' : 'numeric'
+  function buildClaimRows(claimItems: ApiClaim[], evidence: ApiEvidence[]): string[][] {
+    const evidenceByClaim = new Map<number, number>();
+    for (const item of evidence) {
+      if (item.claim_id === null || item.claim_id === undefined) continue;
+      evidenceByClaim.set(item.claim_id, (evidenceByClaim.get(item.claim_id) ?? 0) + 1);
+    }
+    const rows = claimItems.slice(0, 8).map((claim) => [
+      claimTypeLabel(claim.claim_type),
+      claim.claim_text,
+      `${formatPercent(claim.confidence)} 신뢰 · 근거 ${formatCount(evidenceByClaim.get(claim.id) ?? 0)}개`,
+      claim.claim_type === 'complaint' ? 'bad' : claim.claim_type === 'praise' ? 'good' : 'mixed'
     ]);
     if (rows.length > 0) return rows;
-    return [['근거 데이터 대기', '/api/evidence 응답이 들어오면 주장과 원문 연결을 표시합니다.', '대기', 'numeric']];
+    return [['주장 대기', '분석 실행 후 주장-근거 구조가 표시됩니다.', '대기', 'mixed']];
   }
 
   function buildEvidenceTableRows(items: ApiEvidence[]): string[][] {
     return items.slice(0, 8).map((item) => [
       evidenceTypeLabel(item.evidence_type),
       trimText(item.quote, 88),
-      item.cluster_id ? clusterTitle(item.cluster_id) : '미연결',
-      formatDate(item.created_at)
+      item.claim_text ? trimText(item.claim_text, 54) : item.cluster_id ? clusterTitle(item.cluster_id) : '미연결',
+      item.quality_score === null || item.quality_score === undefined ? '품질 미상' : formatPercent(item.quality_score)
     ]);
   }
 
@@ -1688,15 +1792,17 @@
     if (value === 'ai') return 'AI 해석';
     if (value === 'praise') return '호평 근거';
     if (value === 'complaint') return '불만 근거';
+    if (value === 'pain_point') return '불만 근거';
+    if (value === 'representative') return '대표 근거';
     if (value === 'mixed') return '혼합 근거';
     return value || '근거';
   }
 
-  function evidenceClaimTitle(item: ApiEvidence) {
-    const cluster = clusterTitle(item.cluster_id);
-    if (!item.note) return cluster || '근거 문장';
-    if (item.note.toLowerCase().startsWith('representative review score')) return cluster || '대표 리뷰';
-    return item.note;
+  function claimTypeLabel(value: string) {
+    if (value === 'complaint') return '불만 주장';
+    if (value === 'praise') return '호평 주장';
+    if (value === 'representative') return '대표 주장';
+    return value || '주장';
   }
 
   function statusLabel(value: string) {
@@ -1832,6 +1938,10 @@
 
   function trimText(value: string, maxLength: number) {
     return value.length > maxLength ? `${value.slice(0, maxLength - 1)}...` : value;
+  }
+
+  function normalizeVisibleText(value: string) {
+    return value.toLowerCase().replace(/\s+/g, ' ').trim();
   }
 </script>
 
@@ -2228,7 +2338,13 @@
                 <label class="field"><span>임베딩 모델</span><input bind:value={analysisOptions.embedding_model} /></label>
                 <label class="field"><span>최소 클러스터 크기</span><input type="number" min="2" max="500" bind:value={analysisOptions.min_cluster_size} /></label>
                 <label class="field"><span>LLM 공급자</span><select bind:value={analysisOptions.llm_provider}><option value="lm_studio">LM Studio</option><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="none">사용 안 함</option></select></label>
+                <label class="field"><span>LLM 모델</span><input bind:value={analysisOptions.llm_model} /></label>
+                <label class="field"><span>품질 컷</span><input type="number" min="0" max="1" step="0.05" bind:value={analysisOptions.min_quality_score} /></label>
+                <label class="field"><span>최대 클러스터</span><input type="number" min="1" max="120" bind:value={analysisOptions.max_clusters} /></label>
+                <label class="field"><span>주장별 근거</span><input type="number" min="1" max="10" bind:value={analysisOptions.evidence_per_claim} /></label>
                 <label class="field toggle-field"><span>AI 요약 생성</span><input type="checkbox" bind:checked={analysisOptions.generate_ai_summary} /></label>
+                <label class="field toggle-field"><span>LM Studio 라벨</span><input type="checkbox" bind:checked={analysisOptions.use_lmstudio_labels} /></label>
+                <label class="field toggle-field"><span>중복 근거 제외</span><input type="checkbox" bind:checked={analysisOptions.exclude_duplicate_evidence} /></label>
               </div>
             </section>
           </section>
@@ -2284,10 +2400,15 @@
             </section>
             {#if selectedCluster}
               <section class="panel cluster-detail">
-                <div class="detail-head"><div><h2>{selectedCluster.title}</h2><p>{selectedCluster.backend ? '백엔드 리뷰 샘플을 불러온 결과입니다.' : '백엔드 미연결 시 표시하는 샘플입니다.'}</p></div><span class={`sentiment ${selectedCluster.tone}`}>{sentimentLabel(selectedCluster.tone)}</span></div>
+                <div class="detail-head"><div><h2>{selectedCluster.title}</h2><p>{selectedCluster.insight?.planner_action ?? (selectedCluster.backend ? '백엔드 리뷰 샘플을 유형별로 섞어 불러온 결과입니다.' : '백엔드 미연결 시 표시하는 샘플입니다.')}</p></div><span class={`sentiment ${selectedCluster.tone}`}>{sentimentLabel(selectedCluster.tone)}</span></div>
+                <div class="cluster-insight-grid">
+                  <div><strong>추천율</strong><span>{selectedCluster.positiveRatio === null ? '미상' : formatPercent(selectedCluster.positiveRatio)}</span></div>
+                  <div><strong>키워드</strong><span>{selectedCluster.keywords.length ? selectedCluster.keywords.slice(0, 5).join(', ') : '키워드 없음'}</span></div>
+                  <div><strong>주의</strong><span>{selectedCluster.qualityWarning ?? selectedCluster.insight?.warnings?.[0] ?? '특이 경고 없음'}</span></div>
+                </div>
                 <div class="review-samples">
                   {#each selectedReviews as sample}
-                    <article class="review-sample"><div class="sample-meta"><strong>{sample.language}</strong><span>{sample.playtime}</span><span class={`sentiment ${sample.reactionTone}`}>{sample.reaction}</span></div><p>“{sample.text}”</p><small>대표도 {sample.score}</small></article>
+                    <article class="review-sample"><div class="sample-meta"><strong>{sample.language}</strong><span>{sample.playtime}</span><span class={`sentiment ${sample.reactionTone}`}>{sample.reaction}</span></div><p>“{sample.text}”</p><small>대표도 {sample.score} · 품질 {sample.quality}{sample.duplicateCount > 1 ? ` · 중복 ${formatCount(sample.duplicateCount)}회` : ''}{sample.flags.length ? ` · ${sample.flags.join(', ')}` : ''}</small></article>
                   {:else}
                     <div class="empty-state">이 클러스터의 리뷰 샘플이 아직 없습니다.</div>
                   {/each}
@@ -2325,7 +2446,7 @@
             <div class="panel form-panel">
               <div class="section-head"><div><h2>주요 주장</h2><p>리포트에 들어갈 문장이 어떤 근거에서 나왔는지 확인합니다.</p></div></div>
               <div class="truth-list">
-                {#each evidenceClaims as claim}
+                {#each claimRows as claim}
                   <article class="truth-item"><div><h3>{claim[0]}</h3><p>{claim[1]}</p></div><span class={`claim ${claim[3]}`}>{claim[2]}</span></article>
                 {/each}
               </div>
@@ -2336,7 +2457,7 @@
                 {#each evidenceItems.slice(0, 5) as evidence}
                   <article class="quote">
                     <p>“{evidence.quote}”</p>
-                    <footer><span>{evidenceTypeLabel(evidence.evidence_type)}</span><span>{clusterTitle(evidence.cluster_id)}</span><span>{formatDate(evidence.created_at)}</span></footer>
+                    <footer><span>{evidenceTypeLabel(evidence.evidence_type)}</span><span>{evidence.claim_text ? trimText(evidence.claim_text, 42) : clusterTitle(evidence.cluster_id)}</span><span>품질 {evidence.quality_score === null || evidence.quality_score === undefined ? '미상' : formatPercent(evidence.quality_score)}</span></footer>
                   </article>
                 {:else}
                   <div class="empty-state">근거 리뷰가 없습니다. 분석 실행 후 다시 확인하세요.</div>
@@ -2344,7 +2465,7 @@
               </div>
             </section>
           </section>
-          <SimpleTable title="검증 큐" headers={['유형', '문장', '클러스터', '생성일']} rows={evidenceTableRows.length ? evidenceTableRows : [['대기', '근거 데이터가 아직 없습니다.', '미연결', '대기']]} />
+          <SimpleTable title="검증 큐" headers={['유형', '문장', '연결 주장', '품질']} rows={evidenceTableRows.length ? evidenceTableRows : [['대기', '근거 데이터가 아직 없습니다.', '미연결', '대기']]} />
         </section>
 
         <section class:active={activeTab === 'report'} class="tab-view" aria-label="리포트">
@@ -2389,9 +2510,12 @@
               <div class="section-head"><div><h2>분석 기본값</h2><p>느린 작업과 비용이 큰 작업은 분석 실행 탭에서 명시적으로 시작합니다.</p></div></div>
               <div class="field-grid">
                 <label class="field"><span>기본 요약 모델</span><input bind:value={analysisOptions.llm_provider} /></label>
+                <label class="field"><span>LM Studio 모델</span><input bind:value={analysisOptions.llm_model} /></label>
                 <label class="field"><span>기본 임베딩</span><input bind:value={analysisOptions.embedding_model} /></label>
                 <label class="field toggle-field"><span>리포트 생성</span><input type="checkbox" bind:checked={analysisOptions.generate_ai_summary} /></label>
                 <label class="field"><span>최소 클러스터 크기</span><input type="number" bind:value={analysisOptions.min_cluster_size} /></label>
+                <label class="field"><span>품질 컷</span><input type="number" min="0" max="1" step="0.05" bind:value={analysisOptions.min_quality_score} /></label>
+                <label class="field toggle-field"><span>중복 근거 제외</span><input type="checkbox" bind:checked={analysisOptions.exclude_duplicate_evidence} /></label>
               </div>
             </section>
           </section>
@@ -2484,8 +2608,12 @@
         <label class="field"><span>최대 리뷰</span><input type="number" min="1" max="50000" bind:value={refreshOptions.max_reviews} /></label>
         <label class="field"><span>분석 범위</span><select bind:value={analysisOptions.scope}><option value="new">새 리뷰</option><option value="all">전체</option></select></label>
         <label class="field"><span>최소 클러스터</span><input type="number" min="1" max="1000" bind:value={analysisOptions.min_cluster_size} /></label>
+        <label class="field"><span>품질 컷</span><input type="number" min="0" max="1" step="0.05" bind:value={analysisOptions.min_quality_score} /></label>
+        <label class="field"><span>최대 클러스터</span><input type="number" min="1" max="120" bind:value={analysisOptions.max_clusters} /></label>
         <label class="field"><span>임베딩</span><input bind:value={analysisOptions.embedding_model} /></label>
         <label class="field"><span>LLM</span><select bind:value={analysisOptions.llm_provider}><option value="lm_studio">LM Studio</option><option value="none">사용 안 함</option></select></label>
+        <label class="field"><span>LLM 모델</span><input bind:value={analysisOptions.llm_model} /></label>
+        <label class="field toggle-field"><span>중복 근거 제외</span><input type="checkbox" bind:checked={analysisOptions.exclude_duplicate_evidence} /></label>
       </div>
       <div class="modal-actions">
         <span>현재 v1은 자동 큐 대신 목록 버튼으로 수동 실행합니다.</span>

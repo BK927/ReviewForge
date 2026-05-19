@@ -91,6 +91,10 @@ class Review(BaseModel):
     steam_created_at: datetime | None = None
     steam_updated_at: datetime | None = None
     collected_at: datetime
+    cluster_score: float | None = None
+    quality_score: float | None = None
+    quality_flags: list[str] = Field(default_factory=list)
+    duplicate_count: int | None = None
 
 
 class Cluster(BaseModel):
@@ -103,17 +107,36 @@ class Cluster(BaseModel):
     review_count: int
     avg_weighted_score: float
     exemplar_review_id: str | None = None
+    positive_ratio: float | None = None
+    top_keywords: list[str] = Field(default_factory=list)
+    quality_warning: str | None = None
+    insight: dict[str, Any] | None = None
     created_at: datetime
 
 
 class Evidence(BaseModel):
     id: int
     analysis_run_id: int | None = None
+    claim_id: int | None = None
     review_id: str
     cluster_id: int | None = None
     quote: str
     evidence_type: str
+    evidence_role: str | None = None
     note: str | None = None
+    quality_score: float | None = None
+    claim_text: str | None = None
+    claim_type: str | None = None
+    created_at: datetime
+
+
+class Claim(BaseModel):
+    id: int
+    analysis_run_id: int | None = None
+    cluster_id: int | None = None
+    claim_type: str
+    claim_text: str
+    confidence: float
     created_at: datetime
 
 
@@ -175,6 +198,12 @@ class AnalysisRunRequest(BaseModel):
     min_cluster_size: int = Field(default=3, ge=1, le=1000)
     generate_ai_summary: bool = False
     llm_provider: str | None = None
+    llm_model: str | None = "supergemma4-e4b-abliterated"
+    min_quality_score: float = Field(default=0.25, ge=0, le=1)
+    exclude_duplicate_evidence: bool = True
+    use_lmstudio_labels: bool = True
+    max_clusters: int = Field(default=60, ge=1, le=120)
+    evidence_per_claim: int = Field(default=3, ge=1, le=10)
 
 
 class AnalysisRun(BaseModel):

@@ -21,6 +21,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
             ("GET", "/api/events", None),
             ("GET", "/api/clusters", None),
             ("GET", "/api/evidence", None),
+            ("GET", "/api/claims", None),
             ("GET", "/api/reports", None),
             ("GET", "/api/settings", None),
             ("GET", "/api/settings/models", None),
@@ -64,6 +65,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
         analysis_payload = analysis.json()
         assert analysis_payload["analysis_run"]["status"] == "succeeded"
         assert analysis_payload["reviews_analyzed"] >= 1
+        assert analysis_payload["clusters_created"] >= 1
+        assert analysis_payload["evidence_created"] >= 1
 
         scoped_refresh = client.post(
             "/api/refresh-steam",
@@ -79,11 +82,24 @@ with tempfile.TemporaryDirectory() as tmpdir:
             "/api/analysis-runs",
             "/api/clusters",
             "/api/evidence",
+            "/api/claims",
             "/api/timeline?bucket=day",
         ]:
             response = client.get(path)
             response.raise_for_status()
             assert response.json()
+
+        cluster_id = client.get("/api/clusters").json()[0]["id"]
+        sampled_reviews = client.get(f"/api/clusters/{cluster_id}/reviews?sample=complaint&limit=5")
+        sampled_reviews.raise_for_status()
+        assert sampled_reviews.json()
+        assert "quality_flags" in sampled_reviews.json()[0]
+
+        evidence_payload = client.get("/api/evidence").json()
+        assert "claim_text" in evidence_payload[0]
+        assert evidence_payload[0]["claim_id"] is not None
+        evidence_quotes = [item["quote"] for item in evidence_payload]
+        assert len(evidence_quotes) == len(set(evidence_quotes))
 
         events = client.get("/api/events")
         events.raise_for_status()

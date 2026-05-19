@@ -162,8 +162,12 @@ def delete_game(app_id: str) -> bool:
                 cluster_placeholders = ",".join(["?"] * len(cluster_ids))
                 conn.execute(f"DELETE FROM review_clusters WHERE cluster_id IN ({cluster_placeholders})", cluster_ids)
                 conn.execute(f"DELETE FROM evidence WHERE cluster_id IN ({cluster_placeholders})", cluster_ids)
+                conn.execute(f"DELETE FROM claims WHERE cluster_id IN ({cluster_placeholders})", cluster_ids)
+                conn.execute(f"DELETE FROM cluster_insights WHERE cluster_id IN ({cluster_placeholders})", cluster_ids)
             conn.execute(f"DELETE FROM clusters WHERE analysis_run_id IN ({placeholders})", run_ids)
             conn.execute(f"DELETE FROM evidence WHERE analysis_run_id IN ({placeholders})", run_ids)
+            conn.execute(f"DELETE FROM claims WHERE analysis_run_id IN ({placeholders})", run_ids)
+            conn.execute(f"DELETE FROM review_quality WHERE analysis_run_id IN ({placeholders})", run_ids)
             conn.execute(f"DELETE FROM reports WHERE analysis_run_id IN ({placeholders})", run_ids)
             conn.execute(f"DELETE FROM analysis_runs WHERE id IN ({placeholders})", run_ids)
 
@@ -178,7 +182,10 @@ def delete_game(app_id: str) -> bool:
                 placeholders = ",".join(["?"] * len(seed_cluster_ids))
                 conn.execute(f"DELETE FROM review_clusters WHERE cluster_id IN ({placeholders})", seed_cluster_ids)
                 conn.execute(f"DELETE FROM evidence WHERE cluster_id IN ({placeholders})", seed_cluster_ids)
+                conn.execute(f"DELETE FROM claims WHERE cluster_id IN ({placeholders})", seed_cluster_ids)
+                conn.execute(f"DELETE FROM cluster_insights WHERE cluster_id IN ({placeholders})", seed_cluster_ids)
             conn.execute("DELETE FROM evidence WHERE analysis_run_id IS NULL")
+            conn.execute("DELETE FROM claims WHERE analysis_run_id IS NULL")
             conn.execute("DELETE FROM clusters WHERE analysis_run_id IS NULL")
 
         conn.execute("DELETE FROM reports WHERE app_id = ?", [app_id])
@@ -454,43 +461,112 @@ def _latest_completed_analysis_run_id(conn: duckdb.DuckDBPyConnection, app_id: s
 
 
 def list_clusters(language: str | None = None, app_id: str | None = None) -> list[dict[str, Any]]:
-    sql = "SELECT * FROM clusters"
+    sql = """
+        SELECT
+            c.*,
+            ci.title AS insight_title,
+            ci.summary AS insight_summary,
+            ci.praise,
+            ci.pain_point,
+            ci.planner_action,
+            ci.marketing_angle,
+            ci.confidence,
+            ci.warnings
+        FROM clusters c
+        LEFT JOIN cluster_insights ci ON ci.cluster_id = c.id
+    """
     clauses = []
     params: list[Any] = []
     resolved_app_id = resolve_app_id(app_id)
     with connect() as conn:
         latest_run_id = _latest_completed_analysis_run_id(conn, resolved_app_id)
         if latest_run_id is not None:
-            clauses.append("analysis_run_id = ?")
+            clauses.append("c.analysis_run_id = ?")
             params.append(latest_run_id)
         elif resolved_app_id == default_app_id():
-            clauses.append("analysis_run_id IS NULL")
+            clauses.append("c.analysis_run_id IS NULL")
         else:
             return []
         if language:
-            clauses.append("(language = ? OR language IS NULL)")
+            clauses.append("(c.language = ? OR c.language IS NULL)")
             params.append(language)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY review_count DESC, avg_weighted_score DESC, id"
-        return rows_to_dicts(conn.execute(sql, params))
+        sql += " ORDER BY c.review_count DESC, c.avg_weighted_score DESC, c.id"
+        rows = rows_to_dicts(conn.execute(sql, params))
+    return [_hydrate_cluster_row(row) for row in rows]
 
 
-def cluster_reviews(cluster_id: int, limit: int, offset: int) -> list[dict[str, Any]]:
+def cluster_reviews(cluster_id: int, limit: int, offset: int, sample: str = "representative") -> list[dict[str, Any]]:
+    order_specs = {
+        "representative": (
+            "rc.score DESC, coalesce(rq.quality_score, 0.5) DESC, r.weighted_vote_score DESC",
+            "cluster_score DESC, coalesce(quality_score, 0.5) DESC, weighted_vote_score DESC",
+        ),
+        "complaint": (
+            "CASE WHEN NOT r.voted_up THEN 1 ELSE 0 END DESC, coalesce(rq.quality_score, 0.5) DESC, r.weighted_vote_score DESC",
+            "CASE WHEN NOT voted_up THEN 1 ELSE 0 END DESC, coalesce(quality_score, 0.5) DESC, weighted_vote_score DESC",
+        ),
+        "praise": (
+            "CASE WHEN r.voted_up THEN 1 ELSE 0 END DESC, coalesce(rq.quality_score, 0.5) DESC, r.weighted_vote_score DESC",
+            "CASE WHEN voted_up THEN 1 ELSE 0 END DESC, coalesce(quality_score, 0.5) DESC, weighted_vote_score DESC",
+        ),
+        "recent": (
+            "coalesce(r.steam_created_at, r.collected_at) DESC, coalesce(rq.quality_score, 0.5) DESC",
+            "coalesce(steam_created_at, collected_at) DESC, coalesce(quality_score, 0.5) DESC",
+        ),
+        "high_weight": (
+            "r.weighted_vote_score DESC, coalesce(rq.quality_score, 0.5) DESC",
+            "weighted_vote_score DESC, coalesce(quality_score, 0.5) DESC",
+        ),
+        "raw": (
+            "rc.score DESC, r.weighted_vote_score DESC",
+            "cluster_score DESC, weighted_vote_score DESC",
+        ),
+    }
+    order_by, outer_order_by = order_specs.get(sample, order_specs["representative"])
+    qualified_review_columns = ", ".join(f"r.{column.strip()}" for column in REVIEW_COLUMNS.replace("\n", " ").split(",") if column.strip())
+    dedupe_clause = ""
+    params: list[Any] = [cluster_id]
+    if sample != "raw":
+        dedupe_clause = "WHERE duplicate_rank = 1"
+    params.extend([limit, offset])
     with connect() as conn:
-        return rows_to_dicts(
+        rows = rows_to_dicts(
             conn.execute(
                 f"""
-                SELECT {REVIEW_COLUMNS}, rc.score AS cluster_score
-                FROM review_clusters rc
-                JOIN reviews r ON r.recommendation_id = rc.review_id
-                WHERE rc.cluster_id = ?
-                ORDER BY rc.score DESC, r.weighted_vote_score DESC
+                WITH ranked AS (
+                    SELECT
+                        {qualified_review_columns},
+                        rc.score AS cluster_score,
+                        rq.quality_score,
+                        rq.quality_flags,
+                        rq.duplicate_count,
+                        row_number() OVER (
+                            PARTITION BY coalesce(rq.text_hash, r.recommendation_id)
+                            ORDER BY {order_by}
+                        ) AS duplicate_rank
+                    FROM review_clusters rc
+                    JOIN reviews r ON r.recommendation_id = rc.review_id
+                    LEFT JOIN review_quality rq
+                        ON rq.review_id = r.recommendation_id
+                       AND rq.analysis_run_id = (
+                            SELECT analysis_run_id FROM clusters WHERE id = rc.cluster_id
+                       )
+                    WHERE rc.cluster_id = ?
+                )
+                SELECT * EXCLUDE (duplicate_rank)
+                FROM ranked
+                {dedupe_clause}
+                ORDER BY {outer_order_by}
                 LIMIT ? OFFSET ?
                 """,
-                [cluster_id, limit, offset],
+                params,
             )
         )
+    for row in rows:
+        row["quality_flags"] = _loads_list(row.get("quality_flags"))
+    return rows
 
 
 def list_evidence(
@@ -498,7 +574,40 @@ def list_evidence(
     evidence_type: str | None = None,
     app_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    sql = "SELECT * FROM evidence"
+    sql = """
+        SELECT
+            e.*,
+            c.claim_text,
+            c.claim_type
+        FROM evidence e
+        LEFT JOIN claims c ON c.id = e.claim_id
+    """
+    clauses = []
+    params: list[Any] = []
+    resolved_app_id = resolve_app_id(app_id)
+    with connect() as conn:
+        latest_run_id = _latest_completed_analysis_run_id(conn, resolved_app_id)
+        if latest_run_id is not None:
+            clauses.append("e.analysis_run_id = ?")
+            params.append(latest_run_id)
+        elif resolved_app_id == default_app_id():
+            clauses.append("e.analysis_run_id IS NULL")
+        else:
+            return []
+        if cluster_id is not None:
+            clauses.append("e.cluster_id = ?")
+            params.append(cluster_id)
+        if evidence_type:
+            clauses.append("e.evidence_type = ?")
+            params.append(evidence_type)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY e.created_at DESC, e.id DESC"
+        return rows_to_dicts(conn.execute(sql, params))
+
+
+def list_claims(app_id: str | None = None, cluster_id: int | None = None) -> list[dict[str, Any]]:
+    sql = "SELECT * FROM claims"
     clauses = []
     params: list[Any] = []
     resolved_app_id = resolve_app_id(app_id)
@@ -514,12 +623,9 @@ def list_evidence(
         if cluster_id is not None:
             clauses.append("cluster_id = ?")
             params.append(cluster_id)
-        if evidence_type:
-            clauses.append("evidence_type = ?")
-            params.append(evidence_type)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY created_at DESC, id DESC"
+        sql += " ORDER BY confidence DESC, created_at DESC, id DESC"
         return rows_to_dicts(conn.execute(sql, params))
 
 
@@ -861,6 +967,8 @@ def rebuild_placeholder_clusters() -> None:
     with connect() as conn:
         conn.execute("DELETE FROM review_clusters")
         conn.execute("DELETE FROM evidence")
+        conn.execute("DELETE FROM claims")
+        conn.execute("DELETE FROM cluster_insights")
         conn.execute("DELETE FROM clusters")
         themes = [
             ("후반 반복성과 보상 밀도", "late|repeat|repetitive|reward|loop|보상|반복|후반", "negative", "장기 플레이에서 반복성, 보상 변화 부족, 루프 피로가 함께 언급됩니다."),
@@ -913,3 +1021,41 @@ def _loads(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
     return json.loads(str(value))
+
+
+def _loads_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    if isinstance(parsed, list):
+        return [str(item) for item in parsed]
+    return []
+
+
+def _hydrate_cluster_row(row: dict[str, Any]) -> dict[str, Any]:
+    top_keywords = _loads_list(row.get("top_keywords"))
+    warnings = _loads_list(row.get("warnings"))
+    insight = None
+    if row.get("insight_title") or row.get("insight_summary"):
+        insight = {
+            "title": row.pop("insight_title", None),
+            "summary": row.pop("insight_summary", None),
+            "praise": row.pop("praise", None),
+            "pain_point": row.pop("pain_point", None),
+            "planner_action": row.pop("planner_action", None),
+            "marketing_angle": row.pop("marketing_angle", None),
+            "confidence": row.pop("confidence", None),
+            "warnings": warnings,
+        }
+    else:
+        for key in ["insight_title", "insight_summary", "praise", "pain_point", "planner_action", "marketing_angle", "confidence"]:
+            row.pop(key, None)
+    row.pop("warnings", None)
+    row["top_keywords"] = top_keywords
+    row["insight"] = insight
+    return row

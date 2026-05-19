@@ -11,6 +11,7 @@ from .models import (
     AnalysisRun,
     AnalysisRunRequest,
     AnalysisRunResult,
+    Claim,
     Cluster,
     DashboardSummary,
     Event,
@@ -146,15 +147,21 @@ def clusters(language: str | None = None, app_id: str | None = None) -> list[dic
 @app.get("/api/clusters/{cluster_id}/reviews", response_model=list[Review])
 def reviews_for_cluster(
     cluster_id: int,
+    sample: str = Query(default="representative", pattern="^(representative|complaint|praise|recent|high_weight|raw)$"),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
-    return repository.cluster_reviews(cluster_id, limit, offset)
+    return repository.cluster_reviews(cluster_id, limit, offset, sample)
 
 
 @app.get("/api/evidence", response_model=list[Evidence])
 def evidence(cluster_id: int | None = None, evidence_type: str | None = None, app_id: str | None = None) -> list[dict]:
     return repository.list_evidence(cluster_id, evidence_type, app_id)
+
+
+@app.get("/api/claims", response_model=list[Claim])
+def claims(app_id: str | None = None, cluster_id: int | None = None) -> list[dict]:
+    return repository.list_claims(app_id, cluster_id)
 
 
 @app.get("/api/reports", response_model=list[Report])
@@ -236,6 +243,12 @@ def create_analysis_run(payload: AnalysisRunRequest) -> dict:
             min_cluster_size=payload.min_cluster_size,
             generate_ai_summary=payload.generate_ai_summary,
             llm_provider=payload.llm_provider,
+            llm_model=payload.llm_model,
+            min_quality_score=payload.min_quality_score,
+            exclude_duplicate_evidence=payload.exclude_duplicate_evidence,
+            use_lmstudio_labels=payload.use_lmstudio_labels,
+            max_clusters=payload.max_clusters,
+            evidence_per_claim=payload.evidence_per_claim,
         )
         repository.scope_analysis_run_outputs(run["id"], app_id)
         finished_run = repository.update_analysis_run(

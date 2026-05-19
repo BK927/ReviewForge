@@ -936,6 +936,21 @@ h3 {
   color: var(--accent);
 }
 
+.claim.bad {
+  background: rgba(255, 120, 120, 0.13);
+  color: var(--negative);
+}
+
+.claim.good {
+  background: rgba(98, 208, 131, 0.13);
+  color: var(--positive);
+}
+
+.claim.mixed {
+  background: rgba(232, 183, 93, 0.13);
+  color: var(--warning);
+}
+
 .trend.up,
 .sentiment.bad {
   background: rgba(255, 120, 120, 0.13);
@@ -1062,6 +1077,35 @@ h3 {
   padding: 18px;
 }
 
+.cluster-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.cluster-insight-grid div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.cluster-insight-grid strong {
+  color: var(--soft);
+  font-size: 11px;
+}
+
+.cluster-insight-grid span {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .cluster-detail .review-samples {
   padding: 16px 0 0;
 }
@@ -1083,6 +1127,13 @@ h3 {
   margin-bottom: 8px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.truth-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
 }
 
 .language-row {
@@ -1263,6 +1314,7 @@ svg {
   .metric-strip,
   .filters,
   .event-guide,
+  .cluster-insight-grid,
   .cluster-grid,
   .project-flow {
     grid-template-columns: 1fr;
@@ -1320,6 +1372,7 @@ svg {
 
   .game-summary,
   .field-grid,
+  .truth-item,
   .language-row,
   .chart-row {
     grid-template-columns: 1fr;
