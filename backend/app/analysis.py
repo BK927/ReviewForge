@@ -18,6 +18,8 @@ DEFAULT_EMBEDDING_MODEL = DEFAULT_SEMANTIC_EMBEDDING_MODEL
 LOCAL_HASH_EMBEDDING_MODEL = "local-hash-v1"
 LM_STUDIO_OPENAI_BASE_URL = "http://127.0.0.1:1234/v1"
 LM_STUDIO_NATIVE_BASE_URL = "http://127.0.0.1:1234/api/v1"
+ISSUE_VERIFIER_BATCH_SIZE = 6
+MAX_LMSTUDIO_ISSUE_CARDS = 12
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,9 @@ class AnalysisPipelineResult:
     evidence_created: int
     clusterer: str
     message: str
+    issues_created: int = 0
+    issue_evidence_created: int = 0
+    axis_suggestions_created: int = 0
 
 
 @dataclass(frozen=True)
@@ -59,6 +64,15 @@ class ClusterInsight:
     warnings: list[str]
     source: str = "deterministic"
     model: str | None = None
+
+
+@dataclass(frozen=True)
+class IssueAspect:
+    key: str
+    label: str
+    pattern: str
+    summary: str
+    recommended_action: str
 
 
 THEMES = [
@@ -124,6 +138,245 @@ GAME_THEMES: dict[str, list[Theme]] = {
     ],
 }
 
+GENERIC_ISSUE_ASPECTS = [
+    IssueAspect(
+        "performance",
+        "성능/안정성",
+        r"crash|bug|bugs|broken|freeze|low fps|fps drop|fps issue|frame drop|frame rate|stutter|lag|loading|performance|optimization|disconnect|튕김|튕|버그|프레임|렉|랙|끊김|멈춤|최적화|クラッシュ|バグ|卡顿|崩溃",
+        "성능, 충돌, 버그, 지연처럼 플레이 안정성을 직접 해치는 신호입니다.",
+        "재현 가능한 환경, 플랫폼, 최근 패치 이후 증가 여부를 먼저 확인하세요.",
+    ),
+    IssueAspect(
+        "balance",
+        "밸런스/RNG",
+        r"balance|balanced|unbalanced|rng|luck|random|unfair|overpowered|op|nerf|buff|밸런스|운빨|운|랜덤|불공평|사기|너프|버프|ランダム|運|平衡",
+        "무작위성, 난이도 체감, 선택지 효율 차이에 대한 신호입니다.",
+        "불만이 집중되는 빌드/구간/조건을 분리해 수치 조정 후보로 검토하세요.",
+    ),
+    IssueAspect(
+        "progression",
+        "난이도/진척",
+        r"difficulty|hard|easy|progress|progression|grind|unlock|level|rank|reward|난이도|어려|쉬움|진행|진척|해금|노가다|보상|레벨",
+        "진행 속도, 해금, 보상, 난이도 곡선에 대한 신호입니다.",
+        "초반/중반/후반 어느 구간에서 막히는지 플레이타임별로 다시 확인하세요.",
+    ),
+    IssueAspect(
+        "content_repetition",
+        "반복성/콘텐츠",
+        r"repetitive|repeat|same|boring|bored|content|endgame|late game|loop|variety|반복|지루|콘텐츠|컨텐츠|후반|엔드게임|다양성|飽き|繰り返",
+        "콘텐츠 다양성, 반복감, 장기 플레이 동기에 대한 신호입니다.",
+        "새 목표, 변주, 보상 밀도 중 무엇이 부족한지 근거 리뷰를 나눠 보세요.",
+    ),
+    IssueAspect(
+        "ui_onboarding",
+        "UI/가독성/온보딩",
+        r"\bui\b|\bux\b|\binterface\b|\bmenu\b|\bhud\b|\breadability\b|\bfont\b|\btext\b|\btutorial\b|\bexplain|confusing|\bcontrols?\b|\bcontroller\b|키설정|조작|가독성|메뉴|인터페이스|글자|튜토리얼|설명|헷갈|읽기|界面|文字",
+        "메뉴, 조작, 설명, 가독성처럼 이해와 반복 사용을 방해하는 신호입니다.",
+        "첫 플레이와 장기 플레이를 나눠, 설명 부족인지 조작 피로인지 분리하세요.",
+    ),
+    IssueAspect(
+        "content_missing",
+        "누락/비교",
+        r"missing|removed|less than|worse than|compared|where is|bring back|lack|lacks|없어|빠졌|부족|돌려|비교|以前|戻して",
+        "이전작/경쟁작/기대치와 비교해 빠졌다고 느끼는 요소입니다.",
+        "실제 누락 기능인지 기대 관리 문제인지 패치 노트와 함께 확인하세요.",
+    ),
+    IssueAspect(
+        "story_logic",
+        "스토리/세계관/엔딩",
+        r"story|plot|logic|deduction|mystery|twist|foreshadow|case|trick|character|route|ending|스토리|서사|개연성|논리|추리|트릭|반전|떡밥|캐릭터|루트|엔딩|剧情|逻辑|推理|诡计|伏笔|角色|路线|结局|ストーリー|推理|伏線|キャラ",
+        "스토리 전개, 세계관, 캐릭터 서사, 엔딩 납득감에 대한 신호입니다.",
+        "불만이면 개연성/힌트/회수 문제로 쪼개고, 강점이면 후속작과 홍보의 핵심 약속으로 써도 되는지 확인하세요.",
+    ),
+    IssueAspect(
+        "content_volume",
+        "분량/완성도",
+        r"short|too short|length|volume|content|incomplete|unfinished|early access|update|chapter|route|ending|replay|분량|볼륨|짧|컨텐츠|콘텐츠|미완성|업데이트|챕터|루트|엔딩|다회차|周目|ボリューム|短い|未完成|更新|章节|路线|结局|画饼|文本",
+        "플레이 분량, 업데이트 기대, 미완성감, 다회차 동기에 대한 신호입니다.",
+        "가격/분량 기대와 실제 플레이 루프를 나눠, 로드맵·DLC·패치 우선순위 후보로 검토하세요.",
+    ),
+    IssueAspect(
+        "localization_readability",
+        "번역/가독성",
+        r"translation|localization|typo|subtitle|korean|english|japanese|chinese|readability|번역|한글화|오역|자막|가독성|텍스트|翻译|本地化|字幕|错字|読みづら|日本語|한국어",
+        "번역, 자막, 텍스트 가독성, 언어 지원 품질에 대한 신호입니다.",
+        "언어별 원문을 비교해 번역 품질 문제인지 텍스트 UI 문제인지 분리하세요.",
+    ),
+]
+
+GAME_ISSUE_ASPECTS: dict[str, list[IssueAspect]] = {
+    "730": [
+        IssueAspect(
+            "cheating",
+            "치터/안티치트",
+            r"cheat|cheater|hacker|hackers|vac|aimbot|wallhack|spinbot|anti cheat|anticheat|ban system|overwatch|치터|핵|해커|안티치트|월핵|에임핵|читер|читеры",
+            "치터와 안티치트 신뢰가 직접적으로 언급되는 경쟁 품질 이슈입니다.",
+            "치터 신고, 매치 품질, VAC 신뢰 언급을 분리해 우선순위를 높게 검토하세요.",
+        ),
+        IssueAspect(
+            "matchmaking",
+            "매치메이킹/랭크",
+            r"matchmaking|match making|premier|rank|ranking|elo|mmr|teammate|team mate|smurf|bot lobby|bot lobbies|lobby|lobbies|매치|매칭|랭크|프리미어|팀원|смурф",
+            "랭크, 프리미어, 팀 구성, 실력 매칭에 대한 신호입니다.",
+            "불만이 솔로큐, 프리미어, 특정 랭크대에 몰리는지 확인하세요.",
+        ),
+        IssueAspect(
+            "toxicity",
+            "팀원/소통/독성",
+            r"toxic|toxicity|racial slur|slurs|grief|griefing|troll|trolling|microphone|voice comm|voice chat|russian|turkish|team kill|팀킬|욕설|트롤|소통|마이크",
+            "팀원 소통, 욕설, 트롤링, 지역/언어 갈등처럼 매치 경험을 해치는 커뮤니티 신호입니다.",
+            "매치메이킹 문제와 분리해 신고/차단/음성 소통 UX 또는 커뮤니티 운영 이슈로 검토하세요.",
+        ),
+        IssueAspect(
+            "server_netcode",
+            "서버/서브틱/히트레지",
+            r"server|servers|subtick|tick|hitreg|hit registration|ping|packet|rubberband|lag|서버|서브틱|틱|핑|랙|렉|히트|판정",
+            "서버 품질, 지연, 탄 판정, 서브틱 체감에 대한 신호입니다.",
+            "지역/시간대/핑과 함께 묶어 네트워크 문제인지 체감 문제인지 분리하세요.",
+        ),
+        IssueAspect(
+            "csgo_regression",
+            "CS:GO 대비 퇴보",
+            r"csgo|cs:go|cs 2|cs2|source 2|old cs|bring back|missing maps|workshop|글옵|카스글옵",
+            "CS:GO와 비교해 기능, 맵, 느낌이 줄었다는 신호입니다.",
+            "비교 대상이 기능 누락인지 감각 변화인지 나눠 로드맵 후보로 정리하세요.",
+        ),
+    ],
+    "2379780": [
+        IssueAspect(
+            "deck_synergy",
+            "조커/덱 시너지",
+            r"joker|jokers|deck|card|combo|synergy|build|hand|blind|조커|덱|카드|콤보|시너지|블라인드|포커|手札|カード",
+            "조커, 카드 조합, 덱빌딩 선택지에 대한 신호입니다.",
+            "특정 조커/카드 조합이 너무 강하거나 약하다는 근거를 분리하세요.",
+        ),
+        IssueAspect(
+            "rng_luck",
+            "RNG/운 의존",
+            r"rng|luck|lucky|random|seed|reroll|운빨|운|랜덤|시드|리롤|運|ランダム",
+            "런 성패가 실력보다 운에 좌우된다고 느끼는 신호입니다.",
+            "실패 구간, 리롤 수단, 보상 선택지의 불만 근거를 우선 확인하세요.",
+        ),
+        IssueAspect(
+            "stakes_progression",
+            "스테이크/앤티 진행",
+            r"stake|stakes|ante|difficulty|unlock|gold stake|orange stake|스테이크|앤티|난이도|해금",
+            "스테이크, 앤티, 해금 구간에서 압박이 커진다는 신호입니다.",
+            "어느 난이도 단계부터 불만이 증가하는지 패치 전후로 비교하세요.",
+        ),
+        IssueAspect(
+            "mobile_platform",
+            "플랫폼/휴대성",
+            r"mobile|phone|ios|android|switch|steam deck|deck verified|portable|모바일|휴대|스위치|스팀덱|폰",
+            "모바일, 스팀덱, 휴대 플레이 기대와 플랫폼 품질 신호입니다.",
+            "플랫폼별 조작/저장/가격/성능 이슈를 따로 확인하세요.",
+        ),
+        IssueAspect(
+            "gambling_framing",
+            "도박/중독 프레이밍",
+            r"gambling|casino|addiction|addictive|crack|drug|도박|중독|카지노|마약|ギャンブル",
+            "게임 루프를 도박성/중독성으로 표현하는 반응입니다.",
+            "호평 밈인지 실제 피로/우려인지 추천 여부와 문맥으로 분리하세요.",
+        ),
+    ],
+    "1859910": [
+        IssueAspect(
+            "update_completion",
+            "업데이트/완성도",
+            r"update|unfinished|incomplete|early access|route|ending|chapter|更新|画饼|文本|未完成|路线|结局|업데이트|미완성|루트|엔딩|분기|텍스트|회차",
+            "업데이트 약속, 완성도, 분기/엔딩/텍스트 추가 기대가 섞인 신호입니다.",
+            "불만이면 로드맵 신뢰와 실제 추가 콘텐츠를 분리하고, 강점이면 업데이트로 다시 플레이할 이유가 되는지 확인하세요.",
+        ),
+        IssueAspect(
+            "route_guidance",
+            "분기/힌트/공략 의존",
+            r"hint|guide|walkthrough|choice|choices|route|ending|gallery|힌트|공략|선택지|분기|루트|엔딩|도감|暗示|攻略|选择|路线|结局|图鉴",
+            "분기 조건, 힌트 부족, 공략 의존, 엔딩 접근성에 대한 신호입니다.",
+            "선택지 피드백, 실패 후 힌트, 도감/회상 UI를 개선 후보로 검토하세요.",
+        ),
+        IssueAspect(
+            "martial_story",
+            "무협 서사/인물 매력",
+            r"martial|wuxia|heroine|character|story|route|무협|협객|히로인|캐릭터|스토리|서사|剧情|武侠|侠客|女主|角色|人设|故事",
+            "무협 분위기, 인물 매력, 루트별 서사에 대한 신호입니다.",
+            "강점이면 스토어 문구와 후속 콘텐츠의 핵심 약속으로 쓰고, 불만이면 특정 루트/인물의 서사 납득감을 점검하세요.",
+        ),
+    ],
+    "3101040": [
+        IssueAspect(
+            "mystery_logic",
+            "추리/재판/마법 규칙",
+            r"mystery|deduction|logic|trick|magic|case|danganronpa|trial|reasoning|추리|논리|트릭|마법|재판|단간|개연성|억지|推理|逻辑|诡计|魔法|审判|弹丸|裁判",
+            "추리 파트, 재판 전개, 마법 규칙, 트릭 납득감, 단간론파식 기대와의 비교 신호입니다.",
+            "불만이면 추리 난이도보다 '힌트-증거-마법 규칙-결론'의 납득성 문제로 우선 확인하세요.",
+        ),
+        IssueAspect(
+            "chapter_replay",
+            "챕터/회차 편의",
+            r"chapter|chapter select|replay|skip|save|one more|周目|チャプター|もう一周|챕터|회차|스킵|저장|다시",
+            "챕터 선택, 재플레이, 회상/스킵처럼 장문 서사 게임의 반복 플레이 편의 신호입니다.",
+            "재감상·분기 회수·추리 재검토를 돕는 기능 후보로 검토하세요.",
+        ),
+        IssueAspect(
+            "character_voice",
+            "캐릭터/연출/더빙",
+            r"character|voice|acting|design|cg|art|캐릭터|캐디|더빙|성우|디자인|일러|연출|角色|配音|人设|立绘|演出|キャラ|ボイス",
+            "캐릭터 디자인, 더빙, 연출이 구매 만족을 만드는 강점 신호입니다.",
+            "강점이면 홍보 소재와 팬덤 확장 포인트로 쓰고, 불만이면 특정 캐릭터/연출의 설득력을 점검하세요.",
+        ),
+    ],
+    "1456820": [
+        IssueAspect(
+            "short_content",
+            "짧은 분량/엔딩 반복",
+            r"short|too short|content|volume|ending|endings|replay|less than|hour|분량|짧|컨텐츠|콘텐츠|볼륨|엔딩|다회차|1시간|ボリューム|短い|エンディング|结局|内容少",
+            "짧은 플레이타임, 엔딩 반복, 콘텐츠 볼륨에 대한 신호입니다.",
+            "가격 기대, 엔딩 수집 동기, 반복 플레이 보상을 분리해 후속 패치/후속작 범위를 정하세요.",
+        ),
+        IssueAspect(
+            "weapon_card_rng",
+            "무기/카드 RNG",
+            r"weapon|weapons|card|cards|rng|random|luck|durability|shotgun|grenade|무기|카드|운|랜덤|내구도|샷건|유탄|武器|カード|運|ランダム|耐久|霰弹枪",
+            "무기 카드, 랜덤 제시, 내구도, 빌드 선택의 운 의존 신호입니다.",
+            "런 다양성의 장점인지 통제감 부족인지 추천/비추천 근거를 나눠 보세요.",
+        ),
+        IssueAspect(
+            "bleak_ending_tone",
+            "엔딩 톤/구원감",
+            r"ending|endings|bad end|good end|救い|虚無|暗い|엔딩|배드엔딩|굿엔딩|구원|허무|우울|结局|坏结局",
+            "엔딩의 어두운 톤, 구원감 부족, 결말 만족도에 대한 신호입니다.",
+            "이 톤이 의도된 정체성인지, 기대 불일치로 비추천을 만드는지 분리하세요.",
+        ),
+    ],
+}
+
+NEGATIVE_CUE_PATTERN = re.compile(
+    r"bad|worse|worst|boring|bored|annoy|frustrat|hate|broken|problem|issue|unfair|too hard|too easy|too short|not enough|lack|lacks|missing|"
+    r"shallow|repetitive|repeat|little content|short content|lack depth|"
+    r"crash|bug|lag|cheat|hacker|비추천|별로|나쁘|망|문제|불만|아쉬|짜증|지루|부족|없어|짧|반복|질리|버그|튕|랙|렉|핵|치터|불공평|어려",
+    re.IGNORECASE,
+)
+REQUEST_CUE_PATTERN = re.compile(
+    r"please|pls|should|need to|needs to|must|add|fix|hope|wish|would like|bring back|"
+    r"제발|추가|고쳐|고쳐줘|개선|필요|바람|원함|돌려",
+    re.IGNORECASE,
+)
+PRAISE_CUE_PATTERN = re.compile(
+    r"love|great|good|amazing|awesome|fun|best|excellent|addictive|recommend|"
+    r"추천|재밌|재미|좋|훌륭|최고|갓겜|명작",
+    re.IGNORECASE,
+)
+BUG_CUE_PATTERN = re.compile(
+    r"crash|bug|bugs|broken|freeze|low fps|fps drop|fps issue|stutter|lag|disconnect|softlock|save|cloud save|"
+    r"버그|튕|프레임|멈춤|렉|랙|세이브|저장",
+    re.IGNORECASE,
+)
+PRAISE_CONFLICT_CUE_PATTERN = re.compile(
+    r"too short|not enough|lack|lacks|missing|boring|bored|repetitive|repeat|shallow|frustrat|disappoint|"
+    r"부족|불만|비판|실망|지루|반복|피로|질리|짧|아쉬|허술|납득하기 어렵",
+    re.IGNORECASE,
+)
+
 LOW_INFORMATION_PHRASES = {
     "good",
     "great",
@@ -146,6 +399,39 @@ LOW_INFORMATION_PHRASES = {
     "재밌다",
     "최고",
     "별로",
+}
+
+SUGGESTION_STOPWORDS = {
+    "game",
+    "games",
+    "good",
+    "great",
+    "best",
+    "love",
+    "like",
+    "fun",
+    "really",
+    "very",
+    "still",
+    "played",
+    "play",
+    "게임",
+    "게임이",
+    "게임은",
+    "게임을",
+    "재미",
+    "재밌",
+    "좋아",
+    "좋은",
+    "최고",
+    "최고의",
+    "무조건",
+    "갓겜",
+    "갓겜이",
+    "아직",
+    "정말",
+    "매우",
+    "비주얼",
 }
 
 STOPWORDS = {
@@ -418,6 +704,7 @@ def run_local_analysis(
     quality_rows = _score_review_quality(reviews)
     quality_by_id = {row.review_id: row for row in quality_rows}
     clustering_reviews = _select_cluster_candidates(reviews, quality_by_id, min_quality_score)
+    issue_units, issue_cards, issue_stats, axis_suggestions = _build_issue_outputs(reviews, quality_by_id, app_id)
 
     embedding_rows: list[list[float]] | None = None
     try:
@@ -450,8 +737,10 @@ def run_local_analysis(
     groups = _apply_ctfidf_keywords(groups)
 
     if generate_ai_summary and llm_provider in {"lmstudio", "lm_studio"}:
-        groups = _enrich_cluster_insights(groups, app_id, use_lmstudio_labels, llm_model)
-        message += " Cluster labels and actions were enriched through LM Studio when available."
+        groups = _enrich_cluster_insights(groups, app_id, False, llm_model)
+        issue_cards, issue_message = _enrich_issue_cards_with_lmstudio(issue_cards, app_id, llm_model, use_lmstudio_labels)
+        if issue_message:
+            message += f" {issue_message}"
     else:
         groups = _enrich_cluster_insights(groups, app_id, False, llm_model)
 
@@ -465,14 +754,34 @@ def run_local_analysis(
             evidence_per_claim=evidence_per_claim,
             exclude_duplicate_evidence=exclude_duplicate_evidence,
         )
+        issues_created, issue_evidence_created = _store_issue_outputs(
+            conn,
+            analysis_run_id,
+            app_id,
+            issue_units,
+            issue_cards,
+        )
+        axis_suggestions_created = _store_axis_suggestions(
+            conn,
+            analysis_run_id,
+            app_id,
+            axis_suggestions,
+        )
         _store_analysis_report(conn, analysis_run_id, app_id, reviews, clusters_created, clusterer)
 
+    coverage = issue_stats.get("issue_coverage")
+    coverage_text = f" 이슈 커버리지는 {coverage:.0%}입니다." if isinstance(coverage, float) else ""
+    suggestion_text = f" 새 평가축 후보 {axis_suggestions_created}개를 제안했습니다." if axis_suggestions_created else ""
+    message += f" Issue board created {issues_created} cards with {issue_evidence_created} evidence quotes.{coverage_text}{suggestion_text}"
     return AnalysisPipelineResult(
         reviews_analyzed=len(reviews),
         clusters_created=clusters_created,
         evidence_created=evidence_created,
         clusterer=clusterer,
         message=message,
+        issues_created=issues_created,
+        issue_evidence_created=issue_evidence_created,
+        axis_suggestions_created=axis_suggestions_created,
     )
 
 
@@ -672,6 +981,811 @@ def _select_cluster_candidates(
     if len(candidates) >= minimum:
         return candidates
     return reviews
+
+
+def _build_issue_outputs(
+    reviews: list[dict[str, Any]],
+    quality_by_id: dict[str, ReviewQuality],
+    app_id: str | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
+    aspects = _active_issue_aspects(app_id)
+    units = _extract_issue_units(reviews, quality_by_id, app_id, aspects)
+    issue_units = [unit for unit in units if not unit["is_quarantined"]]
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for unit in issue_units:
+        if unit["intent"] == "other" or unit["aspect"] == "general":
+            continue
+        issue_intent = unit["intent"] if unit["intent"] in {"bug", "praise", "request"} else "complaint"
+        grouped[(unit["aspect"], issue_intent)].append(unit)
+
+    cards = [
+        _build_issue_card(aspect, intent, members, app_id, len(reviews), aspects)
+        for (aspect, intent), members in grouped.items()
+        if members
+    ]
+    cards = sorted(cards, key=lambda item: item["priority_score"], reverse=True)
+    stats = {
+        "unit_count": len(units),
+        "quarantined_units": sum(1 for unit in units if unit["is_quarantined"]),
+        "assigned_units": sum(len(card["units"]) for card in cards),
+        "issue_coverage": _issue_coverage(reviews, cards),
+    }
+    suggestions = _build_axis_suggestions(units, cards, aspects)
+    return units, cards, stats, suggestions
+
+
+def _extract_issue_units(
+    reviews: list[dict[str, Any]],
+    quality_by_id: dict[str, ReviewQuality],
+    app_id: str | None,
+    aspects: list[IssueAspect] | None = None,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for review in reviews:
+        review_id = str(review["recommendation_id"])
+        review_quality = quality_by_id.get(review_id)
+        for unit_index, unit_text in enumerate(_split_review_units(str(review.get("review") or ""))):
+            normalized = _normalize_review_text(unit_text)
+            tokens = _tokens(unit_text)
+            intent = _issue_intent(unit_text, bool(review.get("voted_up")))
+            aspect = _issue_aspect(unit_text, app_id, aspects)
+            quality_flags = list(review_quality.quality_flags if review_quality else [])
+            if len(normalized) < 18 or len(tokens) <= 2:
+                quality_flags.append("short_unit")
+            if _looks_like_low_information(normalized, tokens):
+                quality_flags.append("low_information_unit")
+
+            base_quality = review_quality.quality_score if review_quality else 0.5
+            length_score = min(len(normalized) / 220, 0.25)
+            specificity_score = min(len(set(tokens)) / 18, 0.2)
+            cue_score = 0.12 if intent in {"complaint", "request", "bug"} else 0.06 if intent == "praise" else 0.0
+            quality_score = max(0.0, min(base_quality * 0.62 + length_score + specificity_score + cue_score, 1.0))
+
+            quarantine_reason = _issue_quarantine_reason(intent, aspect, quality_score, quality_flags)
+            rows.append(
+                {
+                    "review": review,
+                    "review_id": review_id,
+                    "unit_index": unit_index,
+                    "unit_text": _quote(unit_text),
+                    "language": review.get("language"),
+                    "voted_up": bool(review.get("voted_up")),
+                    "intent": intent,
+                    "aspect": aspect,
+                    "sentiment": "positive" if review.get("voted_up") else "negative",
+                    "quality_score": quality_score,
+                    "quality_flags": sorted(set(quality_flags)),
+                    "is_quarantined": quarantine_reason is not None,
+                    "quarantine_reason": quarantine_reason,
+                    "text_hash": _text_hash(unit_text),
+                }
+            )
+    return rows
+
+
+def _split_review_units(text: str) -> list[str]:
+    compact = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not compact:
+        return []
+    parts = re.split(r"(?<=[.!?。！？])\s+|\n+|[•●]|(?:\s+-\s+)", compact)
+    cleaned = [part.strip(" \t\r\n\"'“”‘’") for part in parts if part.strip()]
+    if not cleaned:
+        cleaned = [compact]
+    merged: list[str] = []
+    for part in cleaned:
+        if len(part) < 24 and merged:
+            merged[-1] = f"{merged[-1]} {part}".strip()
+        else:
+            merged.append(part)
+    return [part[:420] for part in merged[:8]]
+
+
+def _issue_intent(text: str, voted_up: bool) -> str:
+    lowered = text.casefold()
+    has_negative = bool(NEGATIVE_CUE_PATTERN.search(lowered))
+    has_request = bool(REQUEST_CUE_PATTERN.search(lowered))
+    has_praise = bool(PRAISE_CUE_PATTERN.search(lowered))
+    has_bug = bool(BUG_CUE_PATTERN.search(lowered))
+    if has_bug and (has_negative or has_request or not voted_up):
+        return "bug"
+    if has_request and (has_negative or not voted_up):
+        return "request"
+    if has_negative or (not voted_up and len(_tokens(text)) >= 4):
+        return "complaint"
+    if has_praise and voted_up:
+        return "praise"
+    return "other"
+
+
+def _issue_aspect(text: str, app_id: str | None, aspects: list[IssueAspect] | None = None) -> str:
+    aspects = aspects or _active_issue_aspects(app_id)
+    matches = [
+        (aspect.key, _safe_pattern_count(aspect.pattern, text))
+        for aspect in aspects
+    ]
+    key, count = max(matches, key=lambda item: item[1])
+    return key if count > 0 else "general"
+
+
+def _issue_quarantine_reason(
+    intent: str,
+    aspect: str,
+    quality_score: float,
+    quality_flags: list[str],
+) -> str | None:
+    if "no_words" in quality_flags:
+        return "no_words"
+    if "very_short" in quality_flags or "short_unit" in quality_flags:
+        return "too_short"
+    if "low_information" in quality_flags or "low_information_unit" in quality_flags:
+        return "low_information"
+    if quality_score < 0.2:
+        return "low_quality"
+    if intent == "other" and aspect == "general":
+        return "no_actionable_signal"
+    return None
+
+
+def _active_issue_aspects(app_id: str | None) -> list[IssueAspect]:
+    resolved_app_id = str(app_id or "")
+    try:
+        with connect() as conn:
+            rows = rows_to_dicts(
+                conn.execute(
+                    """
+                    SELECT key, label, pattern, description, recommended_action
+                    FROM analysis_axes
+                    WHERE status = 'active'
+                      AND (scope IN ('common', 'genre') OR app_id = ?)
+                    ORDER BY
+                        CASE scope WHEN 'game' THEN 1 WHEN 'genre' THEN 2 ELSE 3 END,
+                        id
+                    """,
+                    [resolved_app_id],
+                )
+            )
+    except Exception:
+        rows = []
+    db_aspects = [
+        IssueAspect(
+            key=str(row["key"]),
+            label=str(row["label"]),
+            pattern=str(row["pattern"]),
+            summary=str(row["description"]),
+            recommended_action=str(row["recommended_action"]),
+        )
+        for row in rows
+    ]
+    seen = {aspect.key for aspect in db_aspects}
+    fallback = [
+        aspect
+        for aspect in [*GAME_ISSUE_ASPECTS.get(resolved_app_id, []), *GENERIC_ISSUE_ASPECTS]
+        if aspect.key not in seen
+    ]
+    return [*db_aspects, *fallback]
+
+
+def _safe_pattern_count(pattern: str, text: str) -> int:
+    try:
+        return len(re.findall(pattern, text, flags=re.IGNORECASE))
+    except re.error:
+        return 0
+
+
+def _build_issue_card(
+    aspect: str,
+    intent: str,
+    members: list[dict[str, Any]],
+    app_id: str | None,
+    total_reviews: int,
+    aspects: list[IssueAspect] | None = None,
+) -> dict[str, Any]:
+    unique_review_ids = {unit["review_id"] for unit in members}
+    positive_ratio = sum(1 for unit in members if unit["voted_up"]) / len(members)
+    intent_counts = Counter(unit["intent"] for unit in members)
+    language_counts = Counter(str(unit.get("language") or "unknown") for unit in members)
+    avg_quality = sum(float(unit["quality_score"]) for unit in members) / len(members)
+    evidence_units = _select_issue_evidence_units(members, intent)
+    evidence_count = len(evidence_units)
+    support_score = min(math.log1p(len(unique_review_ids)) / math.log(81), 1.0)
+    evidence_score = min(evidence_count / 5, 1.0)
+    negative_weight = 1.0 - positive_ratio if intent != "praise" else positive_ratio
+    specificity_score = 1.0 if aspect != "general" else 0.3
+    confidence = max(
+        0.0,
+        min(
+            support_score * 0.38
+            + evidence_score * 0.24
+            + avg_quality * 0.2
+            + negative_weight * 0.12
+            + specificity_score * 0.06,
+            0.96,
+        ),
+    )
+    priority_score = max(
+        0.0,
+        min(
+            support_score * 0.45
+            + negative_weight * 0.22
+            + avg_quality * 0.18
+            + min(len(members) / 80, 1.0) * 0.15,
+            1.0,
+        ),
+    )
+    status, confidence_band, warnings = _issue_status(
+        aspect,
+        intent,
+        confidence,
+        len(unique_review_ids),
+        evidence_count,
+        total_reviews,
+        positive_ratio,
+    )
+    aspect_spec = _issue_aspect_spec(aspect, app_id, aspects)
+    top_terms = _issue_top_terms(members)
+    title = _issue_title(aspect_spec, intent)
+    summary = _issue_summary(aspect_spec, intent, members, positive_ratio)
+    return {
+        "title": title,
+        "summary": summary,
+        "intent": intent,
+        "aspect": aspect,
+        "status": status,
+        "confidence_band": confidence_band,
+        "confidence": confidence,
+        "priority_score": priority_score,
+        "review_count": len(unique_review_ids),
+        "unique_review_count": len(unique_review_ids),
+        "unit_count": len(members),
+        "complaint_count": intent_counts["complaint"],
+        "praise_count": intent_counts["praise"],
+        "request_count": intent_counts["request"],
+        "bug_count": intent_counts["bug"],
+        "positive_ratio": positive_ratio,
+        "language_counts": dict(language_counts),
+        "top_terms": top_terms,
+        "why_it_matters": _issue_why_it_matters(aspect_spec, intent, len(unique_review_ids), top_terms),
+        "recommended_action": aspect_spec.recommended_action,
+        "warnings": warnings,
+        "source": "deterministic_issue_rules",
+        "model": None,
+        "units": members,
+        "evidence_units": evidence_units,
+    }
+
+
+def _enrich_issue_cards_with_lmstudio(
+    cards: list[dict[str, Any]],
+    app_id: str | None,
+    llm_model: str | None,
+    enabled: bool,
+) -> tuple[list[dict[str, Any]], str | None]:
+    if not enabled or not cards:
+        return cards, None
+
+    enriched: list[dict[str, Any]] = []
+    verified_count = 0
+    failed_count = 0
+    model_used: str | None = None
+    candidates = sorted(cards, key=_lmstudio_issue_candidate_score, reverse=True)
+    for index, card in enumerate(candidates):
+        current = {**card, "evidence_units": list(card.get("evidence_units") or [])}
+        if index < MAX_LMSTUDIO_ISSUE_CARDS and current["evidence_units"]:
+            try:
+                verified_card, model_name = _lmstudio_issue_card(current, app_id, llm_model)
+            except Exception:
+                failed_count += 1
+            else:
+                if verified_card and _verified_issue_match_count(verified_card) >= 3:
+                    current = verified_card
+                    model_used = model_name or model_used
+                    verified_count += 1
+                    enriched.append(current)
+                else:
+                    failed_count += 1
+
+    if verified_count == 0:
+        return cards, "Issue verifier skipped or unavailable."
+    enriched = sorted(enriched, key=lambda item: item["priority_score"], reverse=True)
+    message = f"Issue verifier checked {verified_count} cards"
+    if failed_count:
+        message += f" and skipped {failed_count} cards"
+    if model_used:
+        message += f" with {model_used}"
+    return enriched, message + "."
+
+
+def _lmstudio_issue_candidate_score(card: dict[str, Any]) -> float:
+    aspect = str(card.get("aspect") or "")
+    intent = str(card.get("intent") or "")
+    score = float(card.get("priority_score") or 0.0)
+    score += min(float(card.get("unique_review_count") or 0) / 120, 0.35)
+    if aspect in {"balance", "progression", "ui_onboarding", "performance"}:
+        score -= 0.2
+    if aspect.startswith(("mystery_", "story_", "content_", "chapter_", "route_", "update_", "short_", "weapon_", "bleak_", "character_")):
+        score += 0.22
+    if intent in {"complaint", "bug", "request"}:
+        score += 0.16
+    elif intent == "praise":
+        score -= 0.05
+    return score
+
+
+def _verified_issue_match_count(card: dict[str, Any]) -> int:
+    return sum(1 for unit in card.get("evidence_units") or [] if unit.get("verifier_verdict") == "match")
+
+
+def _lmstudio_issue_card(
+    card: dict[str, Any],
+    app_id: str | None,
+    llm_model: str | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    with httpx.Client(timeout=75) as client:
+        model = _lmstudio_openai_model_sync(client, llm_model)
+        if not model:
+            return None, None
+        verified_units: list[dict[str, Any]] = []
+        evidence_units = list(card.get("evidence_units") or [])
+        for offset in range(0, len(evidence_units), ISSUE_VERIFIER_BATCH_SIZE):
+            batch = evidence_units[offset : offset + ISSUE_VERIFIER_BATCH_SIZE]
+            verdicts = _lmstudio_issue_verifier_batch(client, model, card, batch, app_id)
+            for local_index, unit in enumerate(batch, start=1):
+                verdict = verdicts.get(local_index, {})
+                summary_ko = str(verdict.get("summary_ko") or "").strip()[:600]
+                verified_units.append(
+                    {
+                        **unit,
+                        "verifier_verdict": _consistent_issue_verdict(unit, card, _clean_verdict(verdict.get("verdict")), summary_ko),
+                        "summary_ko": summary_ko,
+                        "subissue": str(verdict.get("subissue") or "").strip()[:120],
+                        "verifier_reason": str(verdict.get("reason") or "").strip()[:600],
+                    }
+                )
+
+        match_units = [unit for unit in verified_units if unit.get("verifier_verdict") == "match"]
+        partial_units = [unit for unit in verified_units if unit.get("verifier_verdict") == "partial"]
+        reject_units = [unit for unit in verified_units if unit.get("verifier_verdict") == "reject"]
+        usable_units = match_units or partial_units
+        if not usable_units:
+            card["warnings"] = [*card.get("warnings", []), "LLM 근거 검증에서 확정 근거가 나오지 않았습니다."]
+            card["evidence_units"] = verified_units
+            card["source"] = "lm_studio_issue_verifier"
+            card["model"] = model
+            card["status"] = "diagnostic"
+            card["confidence_band"] = "low"
+            card["confidence"] = min(float(card.get("confidence") or 0.5), 0.42)
+            return card, model
+
+        summary = _lmstudio_issue_card_summary(client, model, card, match_units, partial_units)
+        if summary:
+            card["title"] = _polish_issue_copy(str(summary.get("issue_title") or card["title"]))[:100]
+            card["summary"] = _polish_issue_copy(str(summary.get("one_line") or card["summary"]))[:1200]
+            card["why_it_matters"] = _polish_issue_copy(str(summary.get("why_it_matters") or card.get("why_it_matters") or ""))[:1400]
+            card["recommended_action"] = _polish_issue_copy(str(summary.get("design_decision") or card.get("recommended_action") or ""))[:1400]
+            risk = str(summary.get("evidence_risk") or "").strip()
+            note = str(summary.get("confidence_note") or "").strip()
+            extra = [value for value in (risk, note) if value]
+            if extra:
+                card["warnings"] = [*card.get("warnings", []), *extra]
+            if str(card.get("intent")) == "praise" and PRAISE_CONFLICT_CUE_PATTERN.search(f"{card['title']} {card['summary']} {card['why_it_matters']}"):
+                card["status"] = "needs_review"
+                card["confidence_band"] = "medium"
+                card["warnings"] = [
+                    *card.get("warnings", []),
+                    "강점 카드에 부정 신호가 섞여 활용 포인트로 확정하지 않았습니다.",
+                ]
+
+        match_ratio = len(match_units) / max(len(verified_units), 1)
+        card["confidence"] = max(
+            0.0,
+            min(float(card.get("confidence") or 0.5) * 0.82 + match_ratio * 0.18, 0.96),
+        )
+        if len(match_units) >= 5 and card["status"] == "diagnostic":
+            card["status"] = "needs_review"
+            card["confidence_band"] = "medium"
+        if len(match_units) < 3 and card["status"] in {"confirmed", "strength"}:
+            card["status"] = "needs_review"
+            card["confidence_band"] = "medium"
+        card["warnings"] = [
+            *card.get("warnings", []),
+            f"LLM 근거 검증: match {len(match_units)}개, partial {len(partial_units)}개, reject {len(reject_units)}개.",
+        ]
+        card["evidence_units"] = sorted(
+            verified_units,
+            key=lambda unit: (
+                {"match": 0, "partial": 1, "reject": 2}.get(str(unit.get("verifier_verdict")), 3),
+                -float(unit.get("quality_score") or 0),
+            ),
+        )
+        card["source"] = "lm_studio_issue_verifier"
+        card["model"] = model
+        return card, model
+
+
+def _polish_issue_copy(text: str) -> str:
+    replacements = {
+        "호평이 관측됨": "강점으로 반복 언급됩니다",
+        "호평이 관측됩니다": "강점으로 반복 언급됩니다",
+        "호평이 관측된다": "강점으로 반복 언급됩니다",
+        "불만이 관측됨": "불만 근거가 반복됩니다",
+        "불만이 관측됩니다": "불만 근거가 반복됩니다",
+        "불만이 관측된다": "불만 근거가 반복됩니다",
+        "관련 의견이 관측됨": "관련 근거가 확인됩니다",
+        "관련 의견이 관측됩니다": "관련 근거가 확인됩니다",
+    }
+    polished = text.strip()
+    for before, after in replacements.items():
+        polished = polished.replace(before, after)
+    return polished
+
+
+def _lmstudio_issue_verifier_batch(
+    client: httpx.Client,
+    model: str,
+    card: dict[str, Any],
+    units: list[dict[str, Any]],
+    app_id: str | None,
+) -> dict[int, dict[str, Any]]:
+    issue_definition = _issue_aspect_spec(str(card.get("aspect") or ""), app_id)
+    sample_text = "\n".join(
+        "\n".join(
+            [
+                f"ID {index}",
+                f"언어={unit.get('language') or 'unknown'} 평가={'추천' if unit.get('voted_up') else '비추천'} 현재={unit.get('aspect')}/{unit.get('intent')}",
+                f"문장={_quote(unit.get('unit_text') or '')}",
+                f"원문맥락={_quote((unit.get('review') or {}).get('review') or '')}",
+            ]
+        )
+        for index, unit in enumerate(units, start=1)
+    )
+    prompt = (
+        "아래 Steam 리뷰 문장이 목표 이슈의 근거로 맞는지 판정하세요. "
+        "반드시 JSON 객체만 출력하고 마크다운 코드블록은 쓰지 마세요. "
+        "verdict는 match, partial, reject 중 하나입니다. "
+        "match는 목표 이슈를 직접 뒷받침할 때, partial은 관련은 있지만 다른 이슈가 섞였을 때, "
+        "reject는 다른 이슈/칭찬/잡음일 때 사용하세요. "
+        f"목표 신호 유형은 {card.get('intent')}입니다. complaint/bug/request 이슈에서 순수 칭찬은 reject 또는 partial입니다. "
+        "praise 이슈에서 순수 불만은 reject 또는 partial입니다. "
+        "summary_ko는 원문 의미를 한국어 1문장으로 요약하세요.\n"
+        f"Steam app_id={app_id}. 목표 이슈={card.get('title')}. "
+        f"정의={issue_definition.summary}. 기획 액션={issue_definition.recommended_action}.\n"
+        f"{sample_text}\n"
+        '출력 형식: {"items":[{"id":1,"verdict":"match","summary_ko":"...","subissue":"...","reason":"..."}]}'
+    )
+    for _attempt in range(2):
+        data = _lmstudio_openai_chat_json(client, model, prompt, max_tokens=2000, temperature=0.0)
+        items = data.get("items") if isinstance(data, dict) else None
+        if isinstance(items, list):
+            parsed: dict[int, dict[str, Any]] = {}
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    item_id = int(item.get("id"))
+                except (TypeError, ValueError):
+                    continue
+                parsed[item_id] = item
+            if parsed:
+                return parsed
+    return {}
+
+
+def _lmstudio_issue_card_summary(
+    client: httpx.Client,
+    model: str,
+    card: dict[str, Any],
+    match_units: list[dict[str, Any]],
+    partial_units: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    evidence_lines = "\n".join(
+        f"{index}. 언어={unit.get('language') or 'unknown'} 평가={'추천' if unit.get('voted_up') else '비추천'} "
+        f"요약={unit.get('summary_ko') or _quote(unit.get('unit_text') or '')} "
+        f"하위이슈={unit.get('subissue') or '미분류'} review_id={unit.get('review_id')}"
+        for index, unit in enumerate(match_units[:8], start=1)
+    )
+    partial_text = ""
+    if partial_units:
+        partial_text = "\npartial 참고: " + " / ".join(
+            str(unit.get("summary_ko") or unit.get("unit_text") or "")[:120]
+            for unit in partial_units[:3]
+        )
+    prompt = (
+        "검증된 match 근거만 사용해 게임 기획자용 이슈 카드 1개를 한국어 JSON으로 작성하세요. "
+        "원문에 없는 주장을 만들지 말고, '호평이 관측된다', '불만이 반복된다', '관련 의견이 있다' 같은 빈 표현은 금지합니다. "
+        "issue_title은 구체적인 문제/강점명으로 쓰고, design_decision은 기획자가 다음에 판단할 액션으로 쓰세요. "
+        "praise 카드라면 문제처럼 쓰지 말고 유지할 강점, 확장 포인트, 마케팅/후속작에 쓸 수 있는 활용 포인트로 쓰세요.\n"
+        f"기존 이슈명={card.get('title')}. 기존 요약={card.get('summary')}.\n"
+        f"match 근거:\n{evidence_lines}{partial_text}\n"
+        '출력 형식: {"issue_title":"...","one_line":"...","why_it_matters":"...","design_decision":"...","evidence_risk":"...","confidence_note":"..."}'
+    )
+    data = _lmstudio_openai_chat_json(client, model, prompt, max_tokens=1300, temperature=0.1)
+    return data if data else None
+
+
+def _lmstudio_openai_chat_json(
+    client: httpx.Client,
+    model: str,
+    prompt: str,
+    *,
+    max_tokens: int,
+    temperature: float,
+) -> dict[str, Any]:
+    response = client.post(
+        f"{LM_STUDIO_OPENAI_BASE_URL}/chat/completions",
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "Return valid JSON only. Korean text values are allowed."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        },
+    )
+    response.raise_for_status()
+    raw = _extract_lmstudio_text(response.json())
+    data = _parse_json_object(str(raw))
+    if not data:
+        raise ValueError("LM Studio returned non-JSON issue verifier output")
+    return data
+
+
+def _clean_verdict(value: Any) -> str:
+    normalized = str(value or "").strip().casefold()
+    if normalized in {"match", "partial", "reject"}:
+        return normalized
+    return "partial" if normalized else "missing"
+
+
+def _consistent_issue_verdict(unit: dict[str, Any], card: dict[str, Any], verdict: str, summary_ko: str = "") -> str:
+    if verdict != "match":
+        return verdict
+    target_intent = str(card.get("intent") or "")
+    unit_intent = str(unit.get("intent") or "")
+    text = str(unit.get("unit_text") or "")
+    positive_summary = bool(re.search(r"긍정|호평|좋|만족|강점|뛰어|훌륭|추천|매력", summary_ko))
+    negative_summary = bool(re.search(r"불만|비판|문제|부족|아쉽|어렵|저하|부정|실망|불편", summary_ko))
+    if target_intent == "praise":
+        if negative_summary and not positive_summary:
+            return "partial"
+        if not bool(unit.get("voted_up")) and not PRAISE_CUE_PATTERN.search(text):
+            return "partial"
+        return "match"
+    if target_intent in {"complaint", "bug", "request"}:
+        if positive_summary and not negative_summary:
+            return "partial"
+        if unit_intent == "praise" and bool(unit.get("voted_up")) and not NEGATIVE_CUE_PATTERN.search(text):
+            return "partial"
+        if target_intent == "bug" and not BUG_CUE_PATTERN.search(text):
+            return "partial"
+        if target_intent == "request" and not REQUEST_CUE_PATTERN.search(text):
+            return "partial"
+    return "match"
+
+
+def _select_issue_evidence_units(members: list[dict[str, Any]], intent: str, limit: int = 8) -> list[dict[str, Any]]:
+    def preferred(unit: dict[str, Any]) -> bool:
+        if intent == "praise":
+            return unit["intent"] == "praise" and bool(unit["voted_up"])
+        return unit["intent"] in {"complaint", "request", "bug"}
+
+    candidates = [unit for unit in members if preferred(unit)] or members
+    candidates = sorted(
+        candidates,
+        key=lambda unit: (
+            0 if unit["intent"] == intent else 1,
+            0 if intent != "praise" and not bool(unit.get("voted_up")) else 1,
+            -float(unit["quality_score"]),
+            -len(str(unit["unit_text"])),
+            -float(unit["review"].get("weighted_vote_score") or 0),
+        ),
+        reverse=False,
+    )
+    selected: list[dict[str, Any]] = []
+    seen_hashes: set[str] = set()
+    seen_reviews: set[str] = set()
+    language_counts: Counter[str] = Counter()
+    for unit in candidates:
+        text_hash = str(unit.get("text_hash") or _text_hash(str(unit.get("unit_text") or "")))
+        if text_hash in seen_hashes or unit["review_id"] in seen_reviews:
+            continue
+        language = str(unit.get("language") or "unknown")
+        if language_counts[language] >= max(2, limit // 3) and len(selected) < limit - 2:
+            continue
+        selected.append(unit)
+        seen_hashes.add(text_hash)
+        seen_reviews.add(unit["review_id"])
+        language_counts[language] += 1
+        if len(selected) >= limit:
+            break
+    if len(selected) < min(limit, 5):
+        for unit in candidates:
+            text_hash = str(unit.get("text_hash") or _text_hash(str(unit.get("unit_text") or "")))
+            if text_hash in seen_hashes or unit["review_id"] in seen_reviews:
+                continue
+            selected.append(unit)
+            seen_hashes.add(text_hash)
+            seen_reviews.add(unit["review_id"])
+            if len(selected) >= limit:
+                break
+    return selected
+
+
+def _issue_status(
+    aspect: str,
+    intent: str,
+    confidence: float,
+    unique_reviews: int,
+    evidence_count: int,
+    total_reviews: int,
+    positive_ratio: float,
+) -> tuple[str, str, list[str]]:
+    warnings: list[str] = []
+    if total_reviews < 1000:
+        warnings.append("리뷰 수가 1,000개 미만이라 탐색 결과로만 보세요.")
+    if unique_reviews < 20:
+        warnings.append("서로 다른 리뷰 수가 적어 확정 이슈로 보기 어렵습니다.")
+    if evidence_count < 3:
+        warnings.append("근거 문장이 3개 미만입니다.")
+    if intent != "praise" and positive_ratio > 0.7:
+        warnings.append("추천 리뷰 비중이 높아 실제 불만인지 문맥 확인이 필요합니다.")
+    if intent != "praise" and aspect in {"balance", "ui_onboarding"} and unique_reviews < 80:
+        warnings.append("일반 분류라서 확정 전에 근거 리뷰 확인이 필요합니다.")
+        confidence = min(confidence, 0.68)
+
+    if intent == "praise" and unique_reviews >= 20 and evidence_count >= 3 and confidence >= 0.68:
+        return "strength", "high", warnings
+    if total_reviews >= 1000 and unique_reviews >= 20 and evidence_count >= 3 and confidence >= 0.7:
+        return "confirmed", "high", warnings
+    if confidence >= 0.5 and evidence_count >= 2:
+        return "needs_review", "medium", warnings
+    return "diagnostic", "low", warnings
+
+
+def _issue_aspect_spec(aspect: str, app_id: str | None, aspects: list[IssueAspect] | None = None) -> IssueAspect:
+    aspects = aspects or _active_issue_aspects(app_id)
+    for spec in aspects:
+        if spec.key == aspect:
+            return spec
+    return IssueAspect(
+        "general",
+        "일반 의견",
+        r".*",
+        "특정 측면으로 분류되지 않은 의견입니다.",
+        "근거 리뷰를 직접 읽고 새 분류 규칙을 추가할지 판단하세요.",
+    )
+
+
+def _issue_title(aspect: IssueAspect, intent: str) -> str:
+    suffix = {
+        "bug": "문제",
+        "complaint": "불만",
+        "request": "개선 요청",
+        "praise": "강점",
+    }.get(intent, "신호")
+    return f"{aspect.label} {suffix}"
+
+
+def _issue_summary(aspect: IssueAspect, intent: str, members: list[dict[str, Any]], positive_ratio: float) -> str:
+    intent_label = {
+        "bug": "버그/성능 문제",
+        "complaint": "불만",
+        "request": "개선 요청",
+        "praise": "호평",
+    }.get(intent, "의견")
+    return (
+        f"{len({unit['review_id'] for unit in members})}개 리뷰의 {len(members)}개 문장에서 "
+        f"{aspect.label} 관련 {intent_label}이 반복됩니다. 추천 비율은 {positive_ratio:.0%}입니다."
+    )
+
+
+def _issue_why_it_matters(aspect: IssueAspect, intent: str, unique_reviews: int, top_terms: list[str]) -> str:
+    terms = ", ".join(top_terms[:4]) if top_terms else "반복 표현 부족"
+    if intent == "praise":
+        return f"{aspect.summary} {unique_reviews}개 리뷰에서 강점으로 반복되며, 대표 표현은 {terms}입니다."
+    return f"{aspect.summary} {unique_reviews}개 리뷰에서 반복되며, 대표 표현은 {terms}입니다."
+
+
+def _issue_top_terms(members: list[dict[str, Any]], limit: int = 8) -> list[str]:
+    counter: Counter[str] = Counter()
+    for unit in members:
+        counter.update(token for token in _tokens(str(unit.get("unit_text") or "")) if token not in STOPWORDS and len(token) > 2)
+    return [token for token, _ in counter.most_common(limit)]
+
+
+def _issue_coverage(reviews: list[dict[str, Any]], cards: list[dict[str, Any]]) -> float | None:
+    negative_ids = {str(row["recommendation_id"]) for row in reviews if not row.get("voted_up")}
+    if not negative_ids:
+        return None
+    assigned_ids = {
+        unit["review_id"]
+        for card in cards
+        if card["intent"] != "praise"
+        for unit in card["units"]
+    }
+    return len(negative_ids & assigned_ids) / len(negative_ids)
+
+
+def _build_axis_suggestions(
+    units: list[dict[str, Any]],
+    cards: list[dict[str, Any]],
+    aspects: list[IssueAspect],
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    existing_labels = {aspect.label.casefold() for aspect in aspects}
+    existing_keys = {aspect.key for aspect in aspects}
+    assigned_aspects = {str(card.get("aspect")) for card in cards}
+    candidate_units = [
+        unit
+        for unit in units
+        if not unit["is_quarantined"]
+        and unit["intent"] in {"complaint", "request", "bug", "praise"}
+        and (unit["aspect"] == "general" or unit["aspect"] not in assigned_aspects)
+    ]
+    if not candidate_units:
+        candidate_units = [
+            unit
+            for unit in units
+            if not unit["is_quarantined"]
+            and unit["intent"] in {"complaint", "request", "bug", "praise"}
+            and unit["aspect"] not in existing_keys
+        ]
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for unit in candidate_units:
+        tokens = [
+            token
+            for token in _tokens(str(unit.get("unit_text") or ""))
+            if token not in STOPWORDS and token not in SUGGESTION_STOPWORDS and len(token) > 2
+        ]
+        if not tokens:
+            continue
+        key = tokens[0]
+        grouped[key].append(unit)
+
+    suggestions: list[dict[str, Any]] = []
+    for token, members in grouped.items():
+        unique_ids = {unit["review_id"] for unit in members}
+        if len(unique_ids) < 3:
+            continue
+        top_terms = _issue_top_terms(members, 5)
+        label = _suggested_axis_label(top_terms, members)
+        if not label or label.casefold() in existing_labels:
+            continue
+        language_counts = Counter(str(unit.get("language") or "unknown") for unit in members)
+        intent_counts = Counter(str(unit.get("intent") or "other") for unit in members)
+        examples = []
+        seen: set[str] = set()
+        for unit in sorted(members, key=lambda item: (-float(item.get("quality_score") or 0), str(item.get("review_id")))):
+            review_id = str(unit["review_id"])
+            if review_id in seen:
+                continue
+            examples.append(review_id)
+            seen.add(review_id)
+            if len(examples) >= 6:
+                break
+        suggestions.append(
+            {
+                "label": label,
+                "rationale": (
+                    f"{len(unique_ids)}개 리뷰에서 {', '.join(top_terms[:4]) or token} 표현이 함께 나왔습니다. "
+                    f"주요 신호는 {intent_counts.most_common(1)[0][0]}입니다."
+                ),
+                "suggested_pattern": "|".join(re.escape(term) for term in top_terms[:8]) or re.escape(token),
+                "evidence_count": len(unique_ids),
+                "language_counts": dict(language_counts),
+                "example_review_ids": examples,
+            }
+        )
+    return sorted(suggestions, key=lambda item: item["evidence_count"], reverse=True)[:limit]
+
+
+def _suggested_axis_label(top_terms: list[str], members: list[dict[str, Any]]) -> str:
+    if not top_terms:
+        return ""
+    intent = Counter(str(unit.get("intent") or "") for unit in members).most_common(1)[0][0]
+    head = "·".join(top_terms[:2])
+    suffix = "강점 후보" if intent == "praise" else "검토 후보"
+    return f"{head} {suffix}"[:80]
 
 
 def _normalize_review_text(text: str) -> str:
@@ -1211,6 +2325,24 @@ def _lmstudio_default_model_sync(client: httpx.Client, preferred_model: str | No
     return llm[0] if llm else models[0] if models else None
 
 
+def _lmstudio_openai_model_sync(client: httpx.Client, preferred_model: str | None = None) -> str | None:
+    preferred = str(preferred_model or "").strip()
+    if preferred:
+        return preferred
+    try:
+        response = client.get(f"{LM_STUDIO_OPENAI_BASE_URL}/models")
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return None
+    models = [
+        str(item.get("id"))
+        for item in payload.get("data", [])
+        if item.get("id") and "embed" not in str(item.get("id")).lower()
+    ]
+    return models[0] if models else None
+
+
 def _store_embeddings(
     conn: duckdb.DuckDBPyConnection,
     reviews: list[dict[str, Any]],
@@ -1277,6 +2409,177 @@ def _store_review_quality(
             for row in quality_rows
         ],
     )
+
+
+def _store_issue_outputs(
+    conn: duckdb.DuckDBPyConnection,
+    analysis_run_id: int,
+    app_id: str | None,
+    units: list[dict[str, Any]],
+    cards: list[dict[str, Any]],
+) -> tuple[int, int]:
+    if not units and not cards:
+        return 0, 0
+
+    conn.execute("DELETE FROM issue_evidence WHERE analysis_run_id = ?", [analysis_run_id])
+    conn.execute("DELETE FROM issues WHERE analysis_run_id = ?", [analysis_run_id])
+    conn.execute("DELETE FROM issue_units WHERE analysis_run_id = ?", [analysis_run_id])
+
+    if units:
+        conn.executemany(
+            """
+            INSERT INTO issue_units (
+                analysis_run_id, app_id, review_id, unit_index, unit_text, language,
+                voted_up, intent, aspect, sentiment, quality_score, quality_flags,
+                is_quarantined, quarantine_reason, text_hash
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    analysis_run_id,
+                    app_id,
+                    unit["review_id"],
+                    unit["unit_index"],
+                    unit["unit_text"],
+                    unit.get("language"),
+                    unit.get("voted_up"),
+                    unit["intent"],
+                    unit["aspect"],
+                    unit["sentiment"],
+                    unit["quality_score"],
+                    json.dumps(unit["quality_flags"]),
+                    unit["is_quarantined"],
+                    unit["quarantine_reason"],
+                    unit["text_hash"],
+                )
+                for unit in units
+            ],
+        )
+
+    unit_ids = {
+        (str(row["review_id"]), int(row["unit_index"]), str(row.get("text_hash") or "")): int(row["id"])
+        for row in rows_to_dicts(
+            conn.execute(
+                """
+                SELECT id, review_id, unit_index, text_hash
+                FROM issue_units
+                WHERE analysis_run_id = ?
+                """,
+                [analysis_run_id],
+            )
+        )
+    }
+
+    issues_created = 0
+    evidence_created = 0
+    for card in cards:
+        issue_id = conn.execute(
+            """
+            INSERT INTO issues (
+                analysis_run_id, app_id, title, summary, intent, aspect, status,
+                confidence_band, confidence, priority_score, review_count,
+                unique_review_count, unit_count, complaint_count, praise_count,
+                request_count, bug_count, positive_ratio, language_counts,
+                top_terms, why_it_matters, recommended_action, warnings, source, model
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+            """,
+            [
+                analysis_run_id,
+                app_id,
+                card["title"],
+                card["summary"],
+                card["intent"],
+                card["aspect"],
+                card["status"],
+                card["confidence_band"],
+                card["confidence"],
+                card["priority_score"],
+                card["review_count"],
+                card["unique_review_count"],
+                card["unit_count"],
+                card["complaint_count"],
+                card["praise_count"],
+                card["request_count"],
+                card["bug_count"],
+                card["positive_ratio"],
+                json.dumps(card["language_counts"]),
+                json.dumps(card["top_terms"]),
+                card["why_it_matters"],
+                card["recommended_action"],
+                json.dumps(card["warnings"]),
+                card["source"],
+                card["model"],
+            ],
+        ).fetchone()[0]
+        issues_created += 1
+
+        for unit in card["evidence_units"]:
+            unit_id = unit_ids.get((unit["review_id"], int(unit["unit_index"]), str(unit.get("text_hash") or "")))
+            conn.execute(
+                """
+                INSERT INTO issue_evidence (
+                    issue_id, unit_id, analysis_run_id, app_id, review_id, quote,
+                    evidence_role, language, voted_up, quality_score,
+                    verifier_verdict, summary_ko, subissue, verifier_reason
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    issue_id,
+                    unit_id,
+                    analysis_run_id,
+                    app_id,
+                    unit["review_id"],
+                    unit["unit_text"],
+                    unit["intent"],
+                    unit.get("language"),
+                    unit.get("voted_up"),
+                    unit["quality_score"],
+                    unit.get("verifier_verdict"),
+                    unit.get("summary_ko"),
+                    unit.get("subissue"),
+                    unit.get("verifier_reason"),
+                ],
+            )
+            evidence_created += 1
+    return issues_created, evidence_created
+
+
+def _store_axis_suggestions(
+    conn: duckdb.DuckDBPyConnection,
+    analysis_run_id: int,
+    app_id: str | None,
+    suggestions: list[dict[str, Any]],
+) -> int:
+    conn.execute("DELETE FROM axis_suggestions WHERE analysis_run_id = ?", [analysis_run_id])
+    if not suggestions:
+        return 0
+    conn.executemany(
+        """
+        INSERT INTO axis_suggestions (
+            analysis_run_id, app_id, label, rationale, suggested_pattern,
+            evidence_count, language_counts, example_review_ids, status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        """,
+        [
+            (
+                analysis_run_id,
+                app_id,
+                suggestion["label"],
+                suggestion["rationale"],
+                suggestion["suggested_pattern"],
+                suggestion["evidence_count"],
+                json.dumps(suggestion["language_counts"]),
+                json.dumps(suggestion["example_review_ids"]),
+            )
+            for suggestion in suggestions
+        ],
+    )
+    return len(suggestions)
 
 
 def _store_analysis_outputs(

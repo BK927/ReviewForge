@@ -311,12 +311,19 @@ select:focus-visible {
 
 .tab-view {
   display: none;
+  min-width: 0;
+  max-width: 100%;
   animation: rise 220ms ease both;
 }
 
 .tab-view.active {
   display: grid;
   gap: 16px;
+}
+
+.tab-view > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 @keyframes rise {
@@ -330,6 +337,7 @@ select:focus-visible {
 .kpi,
 .metric,
 .cluster-node,
+.issue-card,
 .step-card {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1031,6 +1039,12 @@ h3 {
   gap: 12px;
 }
 
+.issue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 12px;
+}
+
 .cluster-node {
   display: grid;
   gap: 12px;
@@ -1039,12 +1053,23 @@ h3 {
   text-align: left;
 }
 
-.cluster-node.active {
+.issue-card {
+  display: grid;
+  gap: 12px;
+  min-height: 210px;
+  padding: 16px;
+  color: inherit;
+  text-align: left;
+}
+
+.cluster-node.active,
+.issue-card.active {
   border-color: rgba(50, 211, 173, 0.55);
   background: var(--accent-soft);
 }
 
 .cluster-node header,
+.issue-card header,
 .review-sample .sample-meta,
 .priority-list li {
   display: flex;
@@ -1054,6 +1079,7 @@ h3 {
 }
 
 .cluster-node p,
+.issue-card p,
 .step-card p,
 .review-sample p,
 .report-block p,
@@ -1065,6 +1091,38 @@ h3 {
   line-height: 1.55;
 }
 
+.issue-card header div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.issue-card h3 {
+  overflow-wrap: anywhere;
+}
+
+.issue-card small {
+  color: var(--soft);
+  font-size: 12px;
+}
+
+.issue-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.issue-stats span,
+.warning-list span {
+  min-height: 24px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .cluster-tag {
   padding: 5px 7px;
   border-radius: 999px;
@@ -1073,8 +1131,14 @@ h3 {
   font-size: 11px;
 }
 
-.cluster-detail {
+.cluster-detail,
+.issue-detail,
+.cluster-diagnostics {
   padding: 18px;
+}
+
+.cluster-diagnostics {
+  margin-top: 18px;
 }
 
 .cluster-insight-grid {
@@ -1101,7 +1165,7 @@ h3 {
 
 .cluster-insight-grid span {
   overflow-wrap: anywhere;
-  color: var(--text);
+  color: var(--ink);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -1110,12 +1174,25 @@ h3 {
   padding: 16px 0 0;
 }
 
+.issue-detail .review-samples {
+  padding: 16px 0 0;
+}
+
+.warning-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .review-sample,
 .truth-item,
 .quote,
 .report-block,
 .model-option,
 .method-note {
+  min-width: 0;
+  max-width: 100%;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1129,11 +1206,93 @@ h3 {
   font-size: 12px;
 }
 
+.review-sample blockquote {
+  max-width: 100%;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-left: 2px solid rgba(50, 211, 173, 0.55);
+  color: var(--ink);
+  background: rgba(50, 211, 173, 0.05);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.evidence-note {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.review-original {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.review-original summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.review-original p {
+  margin-top: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .truth-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: 12px;
+}
+
+.evidence-truth {
+  align-items: stretch;
+}
+
+.axis-list {
+  display: grid;
+  gap: 10px;
+}
+
+.axis-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.axis-item.disabled {
+  opacity: 0.58;
+}
+
+.axis-item header,
+.axis-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.axis-item p,
+.axis-item small {
+  display: block;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.axis-item small {
+  color: var(--soft);
+  font-size: 12px;
 }
 
 .language-row {
@@ -1316,6 +1475,7 @@ svg {
   .event-guide,
   .cluster-insight-grid,
   .cluster-grid,
+  .issue-grid,
   .project-flow {
     grid-template-columns: 1fr;
   }

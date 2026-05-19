@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ReviewForge - Game Library Redesign</title>
+  <style>
+    :root {
+      --bg: #080b0a;
+      --rail: #0b100e;
+      --panel: #101613;
+      --panel-2: #151d19;
+      --line: #25332e;
+      --line-strong: #3b5149;
+      --ink: #eff7f2;
+      --muted: #9eaaa4;
+      --soft: #6f7d76;
+      --accent: #32d3ad;
+      --accent-dark: #0d332b;
+      --good: #67d386;
+      --warn: #e2b258;
+      --bad: #ff7777;
+      --info: #84aee8;
+      color-scheme: dark;
+      font-family: "Aptos", "Pretendard", "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--bg);
+      color: var(--ink);
+      letter-spacing: 0;
+      word-break: keep-all;
+    }
+
+    button,
+    input,
+    select { font: inherit; }
+
+    button {
+      cursor: pointer;
+      border: 0;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 208px minmax(0, 1fr);
+      min-height: 100svh;
+    }
+
+    .rail {
+      position: sticky;
+      top: 0;
+      height: 100svh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 24px;
+      padding: 22px 14px;
+      border-right: 1px solid var(--line);
+      background: var(--rail);
+    }
+
+    .brand,
+    .nav-button,
+    .topbar,
+    .toolbar,
+    .filters,
+    .game-row,
+    .row-actions,
+    .chip,
+    .pill,
+    .panel-tabs,
+    .setting-row,
+    .toast {
+      display: flex;
+      align-items: center;
+    }
+
+    .brand {
+      gap: 10px;
+      padding: 0 8px;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 7px;
+      background: var(--accent);
+      color: #041b16;
+      font-weight: 900;
+    }
+
+    .brand strong {
+      display: block;
+      font-size: 15px;
+    }
+
+    .brand span,
+    .nav-label,
+    .nav-button,
+    .rail-foot,
+    .sub,
+    .meta,
+    .field-note,
+    .setting-row span,
+    .empty {
+      color: var(--muted);
+    }
+
+    .nav {
+      display: grid;
+      align-content: start;
+      gap: 4px;
+    }
+
+    .nav-label {
+      padding: 8px 8px 4px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .nav-button {
+      min-height: 34px;
+      gap: 8px;
+      padding: 0 9px;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+    }
+
+    .nav-button.active,
+    .nav-button:hover {
+      background: rgba(50, 211, 173, 0.11);
+      color: var(--accent);
+    }
+
+    .rail-foot {
+      display: grid;
+      gap: 6px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      font-size: 12px;
+    }
+
+    .workspace {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      justify-content: space-between;
+      gap: 18px;
+      min-height: 68px;
+      padding: 14px 22px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(8, 11, 10, 0.92);
+      backdrop-filter: blur(14px);
+    }
+
+    .title {
+      min-width: 0;
+    }
+
+    h1,
+    h2,
+    h3,
+    p { margin: 0; }
+
+    h1 {
+      font-size: clamp(24px, 3vw, 34px);
+      line-height: 1.1;
+    }
+
+    h2 { font-size: 20px; }
+    h3 { font-size: 14px; }
+
+    .sub {
+      margin-top: 3px;
+      font-size: 13px;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .button,
+    .chip,
+    .tab-button,
+    .row-action {
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .button:hover,
+    .chip:hover,
+    .tab-button:hover,
+    .row-action:hover {
+      border-color: var(--line-strong);
+      color: var(--ink);
+      background: var(--panel-2);
+    }
+
+    .button.primary,
+    .row-action.primary {
+      border-color: transparent;
+      background: var(--accent);
+      color: #041b16;
+      font-weight: 900;
+    }
+
+    .tab-button.active,
+    .chip.active {
+      border-color: rgba(50, 211, 173, 0.55);
+      background: rgba(50, 211, 173, 0.13);
+      color: var(--accent);
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 18px;
+      padding: 18px 22px 28px;
+      min-width: 0;
+    }
+
+    .main,
+    .panel,
+    .library {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .toolbar {
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .search {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1 1 360px;
+      min-width: 220px;
+      min-height: 40px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .search span {
+      color: var(--soft);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .search input {
+      width: 100%;
+      min-width: 0;
+      border: 0;
+      background: transparent;
+      color: var(--ink);
+    }
+
+    .filters {
+      gap: 7px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .chip {
+      font-size: 12px;
+    }
+
+    .summary-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .library {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .list-head,
+    .game-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) 108px 112px 86px 118px 124px;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .list-head {
+      min-height: 40px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--soft);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .list {
+      max-height: calc(100svh - 238px);
+      min-height: 420px;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    .game-row {
+      width: 100%;
+      min-height: 66px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      color: inherit;
+      text-align: left;
+    }
+
+    .game-row:hover {
+      background: rgba(50, 211, 173, 0.11);
+    }
+
+    .game-main {
+      display: grid;
+      min-width: 0;
+      gap: 4px;
+    }
+
+    .game-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 800;
+    }
+
+    .meta {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+    }
+
+    .pill {
+      justify-content: center;
+      width: fit-content;
+      min-height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .good { background: rgba(103, 211, 134, 0.13); color: var(--good); }
+    .mixed { background: rgba(226, 178, 88, 0.13); color: var(--warn); }
+    .bad { background: rgba(255, 119, 119, 0.13); color: var(--bad); }
+    .neutral { background: rgba(132, 174, 232, 0.13); color: var(--info); }
+
+    .score {
+      display: grid;
+      gap: 5px;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .track {
+      overflow: hidden;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--panel-2);
+    }
+
+    .track b {
+      display: block;
+      width: var(--score);
+      height: 100%;
+      background: var(--accent);
+    }
+
+    .row-actions {
+      justify-content: flex-end;
+    }
+
+    .row-action {
+      min-height: 30px;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 16px;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .panel-tabs {
+      gap: 6px;
+      margin-top: 14px;
+    }
+
+    .tab-button {
+      min-height: 30px;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    .settings-list {
+      display: grid;
+      gap: 0;
+      margin-top: 14px;
+    }
+
+    .setting-row {
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .setting-row div {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .setting-value {
+      min-height: 30px;
+      padding: 0 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-2);
+      color: var(--ink);
+      white-space: nowrap;
+    }
+
+    .toast {
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 40px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--accent-dark);
+      color: var(--accent);
+      font-size: 13px;
+    }
+
+    .settings-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: start end;
+      padding: 76px 22px 22px;
+      background: rgba(0, 0, 0, 0.36);
+    }
+
+    .settings-card {
+      width: min(420px, calc(100vw - 28px));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+    }
+
+    .settings-card .panel-head {
+      padding: 16px 16px 0;
+    }
+
+    .settings-card .panel-tabs {
+      padding: 0 16px;
+    }
+
+    .empty {
+      padding: 28px 14px;
+      text-align: center;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @media (max-width: 860px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .rail {
+        position: static;
+        height: auto;
+        grid-template-rows: auto auto;
+      }
+
+      .rail-foot {
+        display: none;
+      }
+
+      .topbar,
+      .toolbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .top-actions,
+      .filters {
+        justify-content: flex-start;
+      }
+
+      .list-head {
+        display: none;
+      }
+
+      .game-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        min-height: 82px;
+      }
+
+      .game-row > .score,
+      .game-row > .review-count,
+      .game-row > .last-sync {
+        display: none;
+      }
+
+      .row-actions {
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .topbar,
+      .content {
+        padding-left: 14px;
+        padding-right: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail" aria-label="주요 탐색">
+      <div class="brand">
+        <div class="brand-mark">R</div>
+        <div>
+          <strong>ReviewForge</strong>
+          <span>Review Ops</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-label">Project</div>
+        <button class="nav-button active" type="button">게임 라이브러리</button>
+        <button class="nav-button" type="button">대시보드</button>
+        <button class="nav-button" type="button">패치 비교</button>
+        <button class="nav-button" type="button">분석 실행</button>
+        <div class="nav-label">Output</div>
+        <button class="nav-button" type="button">클러스터</button>
+        <button class="nav-button" type="button">근거 검증</button>
+        <button class="nav-button" type="button">리포트</button>
+      </nav>
+
+      <div class="rail-foot">
+        <strong id="rail-count">12 games</strong>
+        <span id="rail-status">8 waiting for work</span>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div class="title">
+          <h1>게임 라이브러리</h1>
+          <p class="sub">수집할 게임을 고르고, 리뷰 수집과 분석을 바로 시작합니다.</p>
+        </div>
+        <div class="top-actions">
+          <button class="button" type="button" id="settings-button">설정</button>
+          <button class="button primary" type="button">게임 추가</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <main class="main">
+          <section class="toolbar">
+            <label class="search">
+              <span>Search</span>
+              <input id="search" placeholder="게임명, Steam App ID, 태그">
+            </label>
+            <div class="filters">
+              <button class="chip active" type="button" data-filter="all">전체</button>
+              <button class="chip" type="button" data-filter="ready">분석 완료</button>
+              <button class="chip" type="button" data-filter="needs-analysis">분석 대기</button>
+              <button class="chip" type="button" data-filter="needs-sync">수집 필요</button>
+              <button class="chip" type="button" data-filter="watch">관찰</button>
+            </div>
+          </section>
+
+          <div class="summary-line">
+            <span id="result-count">0개 표시</span>
+            <span id="summary-text">검색과 필터로 작업 대상을 줄입니다.</span>
+          </div>
+
+          <section class="library" aria-label="게임 목록">
+            <div class="list-head">
+              <span>게임</span>
+              <span>상태</span>
+              <span>리뷰</span>
+              <span>추천율</span>
+              <span>최근 수집</span>
+              <span>작업</span>
+            </div>
+            <div class="list" id="game-list"></div>
+          </section>
+
+          <div class="toast" id="toast">
+            <span>목록에서 바로 리뷰 수집이나 분석 실행을 시작합니다.</span>
+            <strong>Ready</strong>
+          </div>
+        </main>
+      </div>
+    </section>
+  </div>
+
+  <section class="settings-overlay hidden" id="settings-overlay" aria-label="설정 패널">
+    <div class="settings-card">
+      <div class="panel-head">
+        <div>
+          <h2>설정</h2>
+          <p class="sub">기본 수집, 분석, 큐 정책</p>
+        </div>
+        <button class="button" type="button" id="close-settings">닫기</button>
+      </div>
+      <div class="panel-tabs">
+        <button class="tab-button active" type="button" data-settings="collect">수집</button>
+        <button class="tab-button" type="button" data-settings="analysis">분석</button>
+        <button class="tab-button" type="button" data-settings="queue">큐</button>
+      </div>
+      <div class="settings-list" id="settings-list"></div>
+    </div>
+  </section>
+
+  <script>
+    const games = [
+      { id: 'hades-ii', key: 'HII', name: 'Hades II', appId: '1145350', status: '분석 완료', filter: 'ready', tone: 'good', reviews: 48219, positive: 73, languages: 14, clusters: 31, evidence: 128, last: '오늘 05:24', action: '패치 반응 검토', note: '패치 1.2 이후 장기 플레이 불만을 다시 확인하는 상태입니다.', tags: ['주요 프로젝트', '패치 추적', '리포트 가능'] },
+      { id: 'cs2', key: 'CS2', name: 'Counter-Strike 2', appId: '730', status: '분석 대기', filter: 'needs-analysis', tone: 'mixed', reviews: 5, positive: 60, languages: 2, clusters: 0, evidence: 0, last: '오늘 04:38', action: '표본 확대', note: 'DB에는 들어왔지만 분석하기에는 표본이 너무 작습니다.', tags: ['수집 테스트', '분석 대기'] },
+      { id: 'balatro', key: 'BAL', name: 'Balatro', appId: '2379780', status: '수집 필요', filter: 'needs-sync', tone: 'mixed', reviews: 0, positive: null, languages: 0, clusters: 0, evidence: 0, last: '없음', action: '첫 수집', note: '비교군 후보로 등록만 된 상태입니다.', tags: ['신규 후보', '비교군'] },
+      { id: 'drg-survivor', key: 'DRG', name: 'Deep Rock Galactic: Survivor', appId: '2321470', status: '관찰 대상', filter: 'watch', tone: 'neutral', reviews: 0, positive: null, languages: 0, clusters: 0, evidence: 0, last: '없음', action: '등록 여부 결정', note: '얼리 액세스 운영 반응을 비교하기 위한 후보입니다.', tags: ['운영 비교', '후보'] },
+      { id: 'helldivers-2', key: 'HD2', name: 'HELLDIVERS 2', appId: '553850', status: '분석 완료', filter: 'ready', tone: 'good', reviews: 189420, positive: 68, languages: 22, clusters: 48, evidence: 230, last: '어제 23:10', action: '지역별 불만 비교', note: '운영 이슈와 패치 반응을 장기 추적하기 좋은 비교 대상입니다.', tags: ['운영 이슈', '글로벌'] },
+      { id: 'palworld', key: 'PAL', name: 'Palworld', appId: '1623730', status: '분석 대기', filter: 'needs-analysis', tone: 'mixed', reviews: 12400, positive: 81, languages: 18, clusters: 0, evidence: 0, last: '5월 18일', action: '전체 분석 실행', note: '리뷰는 충분하지만 클러스터링이 아직 실행되지 않았습니다.', tags: ['대량 리뷰', '분석 대기'] },
+      { id: 'elden-ring', key: 'ER', name: 'ELDEN RING', appId: '1245620', status: '분석 완료', filter: 'ready', tone: 'good', reviews: 642110, positive: 91, languages: 25, clusters: 54, evidence: 310, last: '5월 17일', action: 'DLC 전후 비교', note: '대형 콘텐츠 전후의 언어권별 반응 비교에 적합합니다.', tags: ['DLC', '대형 표본'] },
+      { id: 'cities2', key: 'CSL', name: 'Cities: Skylines II', appId: '949230', status: '관찰 대상', filter: 'watch', tone: 'bad', reviews: 92130, positive: 41, languages: 20, clusters: 39, evidence: 190, last: '5월 15일', action: '성능 불만 추적', note: '부정 신호가 강해서 패치 전후 비교 대상으로 남겨둡니다.', tags: ['성능', '부정 신호'] },
+      { id: 'stardew', key: 'SDV', name: 'Stardew Valley', appId: '413150', status: '분석 완료', filter: 'ready', tone: 'good', reviews: 705230, positive: 97, languages: 27, clusters: 42, evidence: 204, last: '5월 14일', action: '호평 패턴 참고', note: '장기 업데이트와 커뮤니티 호감도를 참고하기 좋은 기준점입니다.', tags: ['벤치마크', '장기 운영'] },
+      { id: 'payday3', key: 'PD3', name: 'PAYDAY 3', appId: '1272080', status: '관찰 대상', filter: 'watch', tone: 'bad', reviews: 58320, positive: 38, languages: 17, clusters: 36, evidence: 172, last: '5월 13일', action: '신뢰 회복 신호 추적', note: '운영 신뢰와 콘텐츠 부족 반응을 따로 볼 필요가 있습니다.', tags: ['운영 신뢰', '부정 신호'] },
+      { id: 'v-rising', key: 'VRS', name: 'V Rising', appId: '1604030', status: '수집 필요', filter: 'needs-sync', tone: 'mixed', reviews: 0, positive: null, languages: 0, clusters: 0, evidence: 0, last: '없음', action: '첫 수집', note: '생존/액션 장르 비교군으로 추가 후보입니다.', tags: ['후보', '장르 비교'] },
+      { id: 'manor-lords', key: 'ML', name: 'Manor Lords', appId: '1363080', status: '분석 대기', filter: 'needs-analysis', tone: 'mixed', reviews: 18422, positive: 77, languages: 16, clusters: 0, evidence: 0, last: '5월 12일', action: 'EA 기대치 분석', note: '얼리 액세스 기대와 콘텐츠 부족 반응을 분리해서 볼 수 있습니다.', tags: ['EA', '기대치'] }
+    ];
+
+    let activeFilter = 'all';
+    let activeSettings = 'collect';
+    let query = '';
+
+    const fmt = (value) => new Intl.NumberFormat('ko-KR').format(value);
+    const pct = (value) => value === null ? '-' : `${value}%`;
+    const actionFor = (game) => {
+      if (game.filter === 'needs-sync') return { label: '리뷰 수집', kind: 'sync', primary: true };
+      if (game.filter === 'needs-analysis') return { label: '분석 실행', kind: 'analyze', primary: true };
+      if (game.filter === 'watch') return { label: '리뷰 갱신', kind: 'sync', primary: false };
+      return { label: '열기', kind: 'open', primary: false };
+    };
+
+    function filteredGames() {
+      const q = query.trim().toLowerCase();
+      return games.filter((game) => {
+        const statusMatch = activeFilter === 'all' || game.filter === activeFilter;
+        const text = `${game.name} ${game.appId} ${game.status} ${game.tags.join(' ')}`.toLowerCase();
+        return statusMatch && (!q || text.includes(q));
+      });
+    }
+
+    function renderList() {
+      const rows = filteredGames();
+      document.querySelector('#result-count').textContent = `${fmt(rows.length)}개 표시`;
+      document.querySelector('#rail-count').textContent = `${fmt(games.length)} games`;
+      document.querySelector('#rail-status').textContent = `${fmt(games.filter((game) => game.filter !== 'ready').length)} waiting for work`;
+      document.querySelector('#summary-text').textContent = `${fmt(games.reduce((sum, game) => sum + game.reviews, 0))}개 리뷰 저장됨`;
+      document.querySelector('#game-list').innerHTML = rows.length ? rows.map((game) => {
+        const action = actionFor(game);
+        return `
+          <div class="game-row">
+            <span class="game-main">
+              <span class="game-title">${game.name}</span>
+              <span class="meta">app/${game.appId} · ${game.tags.slice(0, 2).join(' · ')} · ${game.last} · ${game.action}</span>
+            </span>
+            <span class="pill ${game.tone}">${game.status}</span>
+            <span class="review-count">${fmt(game.reviews)}</span>
+            <span class="score"><span>${pct(game.positive)}</span><span class="track" style="--score:${game.positive || 0}%"><b></b></span></span>
+            <span class="last-sync">${game.last}</span>
+            <span class="row-actions"><button class="row-action ${action.primary ? 'primary' : ''}" type="button" data-action="${action.kind}" data-game="${game.id}">${action.label}</button></span>
+          </div>
+        `;
+      }).join('') : '<div class="empty">검색 결과가 없습니다.</div>';
+
+      document.querySelectorAll('[data-action]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          flash(button.dataset.action, button.dataset.game);
+        });
+      });
+    }
+
+    function renderSettings() {
+      const groups = {
+        collect: [
+          ['언어', 'Steam 리뷰 수집 범위', '전체'],
+          ['최대 리뷰', '한 번에 가져올 상한', '5,000'],
+          ['정렬', '기본 Steam 요청 순서', '최신순'],
+          ['자동 분석', '수집 후 큐 등록', '끔']
+        ],
+        analysis: [
+          ['임베딩', '다국어 의미 묶기', 'multilingual-e5'],
+          ['최소 클러스터', '잡음 제외 기준', '20'],
+          ['LLM 요약', 'LM Studio 사용', '켬'],
+          ['근거 연결', '원문 리뷰 보존', '필수']
+        ],
+        queue: [
+          ['처리 방식', '먼저 들어온 작업부터', 'FIFO'],
+          ['동시 실행', '로컬 PC 보호', '1개'],
+          ['실패 처리', 'Steam 제한/모델 오류', '수동 재시도'],
+          ['시작 방식', '게임 추가 직후', '수동']
+        ]
+      };
+      document.querySelectorAll('[data-settings]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.settings === activeSettings);
+      });
+      document.querySelector('#settings-list').innerHTML = groups[activeSettings].map((row) => `
+        <div class="setting-row"><div><strong>${row[0]}</strong><span>${row[1]}</span></div><button class="setting-value" type="button">${row[2]}</button></div>
+      `).join('');
+    }
+
+    function renderFilters() {
+      document.querySelectorAll('[data-filter]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.filter === activeFilter);
+      });
+    }
+
+    function flash(kind, gameId) {
+      const game = games.find((item) => item.id === gameId) || games[0];
+      const messages = {
+        sync: `${game.name} 리뷰 수집 작업을 큐에 넣습니다.`,
+        analyze: `${game.name} 분석 작업을 큐에 넣습니다.`,
+        open: `${game.name} 대시보드로 이동합니다.`,
+        'collect-analyze': `${game.name} 수집 후 자동 분석을 예약합니다.`
+      };
+      document.querySelector('#toast span').textContent = messages[kind] || '대기 중';
+      document.querySelector('#toast strong').textContent = kind === 'open' ? 'Open' : 'Queued';
+    }
+
+    function render() {
+      renderFilters();
+      renderList();
+      renderSettings();
+    }
+
+    document.querySelector('#search').addEventListener('input', (event) => {
+      query = event.target.value;
+      renderList();
+    });
+    document.querySelectorAll('[data-filter]').forEach((button) => {
+      button.addEventListener('click', () => {
+        activeFilter = button.dataset.filter;
+        render();
+      });
+    });
+    document.querySelectorAll('[data-settings]').forEach((button) => {
+      button.addEventListener('click', () => {
+        activeSettings = button.dataset.settings;
+        renderSettings();
+      });
+    });
+    document.querySelector('#settings-button').addEventListener('click', () => {
+      document.querySelector('#settings-overlay').classList.remove('hidden');
+    });
+    document.querySelector('#close-settings').addEventListener('click', () => {
+      document.querySelector('#settings-overlay').classList.add('hidden');
+    });
+    document.querySelector('#settings-overlay').addEventListener('click', (event) => {
+      if (event.target.id === 'settings-overlay') {
+        document.querySelector('#settings-overlay').classList.add('hidden');
+      }
+    });
+
+    render();
+  </script>
+</body>
+</html>

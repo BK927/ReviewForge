@@ -11,6 +11,10 @@ from .models import (
     AnalysisRun,
     AnalysisRunRequest,
     AnalysisRunResult,
+    AnalysisAxis,
+    AxisIn,
+    AxisSuggestion,
+    AxisUpdate,
     Claim,
     Cluster,
     DashboardSummary,
@@ -21,6 +25,9 @@ from .models import (
     Game,
     GameIn,
     GameUpdate,
+    Issue,
+    IssueEvidence,
+    IssueSummary,
     Job,
     LanguageSummary,
     RefreshRequest,
@@ -164,6 +171,78 @@ def claims(app_id: str | None = None, cluster_id: int | None = None) -> list[dic
     return repository.list_claims(app_id, cluster_id)
 
 
+@app.get("/api/issues", response_model=list[Issue])
+def issues(
+    app_id: str | None = None,
+    status: str | None = None,
+    intent: str | None = None,
+    aspect: str | None = None,
+    limit: int = Query(default=80, ge=1, le=300),
+) -> list[dict]:
+    return repository.list_issues(app_id, status, intent, aspect, limit)
+
+
+@app.get("/api/issues/summary", response_model=IssueSummary)
+def issues_summary(app_id: str | None = None) -> dict:
+    return repository.issue_summary(app_id)
+
+
+@app.get("/api/issues/{issue_id}/evidence", response_model=list[IssueEvidence])
+def evidence_for_issue(
+    issue_id: int,
+    limit: int = Query(default=50, ge=1, le=300),
+    language: str | None = None,
+) -> list[dict]:
+    return repository.list_issue_evidence(issue_id, limit, language)
+
+
+@app.get("/api/axes", response_model=list[AnalysisAxis])
+def axes(app_id: str | None = None, status: str | None = None) -> list[dict]:
+    return repository.list_axes(app_id, status)
+
+
+@app.post("/api/axes", response_model=AnalysisAxis)
+def create_axis(payload: AxisIn) -> dict:
+    return repository.create_axis(payload)
+
+
+@app.patch("/api/axes/{axis_id}", response_model=AnalysisAxis)
+def update_axis(axis_id: int, payload: AxisUpdate) -> dict:
+    axis = repository.update_axis(axis_id, payload)
+    if not axis:
+        raise HTTPException(status_code=404, detail="Axis not found")
+    return axis
+
+
+@app.get("/api/axis-suggestions", response_model=list[AxisSuggestion])
+def axis_suggestions(app_id: str | None = None, status: str | None = None) -> list[dict]:
+    return repository.list_axis_suggestions(app_id, status)
+
+
+@app.post("/api/axis-suggestions/{suggestion_id}/approve", response_model=AxisSuggestion)
+def approve_axis_suggestion(suggestion_id: int) -> dict:
+    suggestion = repository.approve_axis_suggestion(suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Axis suggestion not found")
+    return suggestion
+
+
+@app.post("/api/axis-suggestions/{suggestion_id}/merge", response_model=AxisSuggestion)
+def merge_axis_suggestion(suggestion_id: int, target_axis_id: int = Query(..., ge=1)) -> dict:
+    suggestion = repository.merge_axis_suggestion(suggestion_id, target_axis_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Axis suggestion or target axis not found")
+    return suggestion
+
+
+@app.post("/api/axis-suggestions/{suggestion_id}/ignore", response_model=AxisSuggestion)
+def ignore_axis_suggestion(suggestion_id: int) -> dict:
+    suggestion = repository.ignore_axis_suggestion(suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Axis suggestion not found")
+    return suggestion
+
+
 @app.get("/api/reports", response_model=list[Report])
 def reports(app_id: str | None = None) -> list[dict]:
     return repository.list_reports(app_id)
@@ -267,6 +346,8 @@ def create_analysis_run(payload: AnalysisRunRequest) -> dict:
                 "analysis_run_id": run["id"],
                 "reviews": result.reviews_analyzed,
                 "clusters": result.clusters_created,
+                "issues": result.issues_created,
+                "axis_suggestions": result.axis_suggestions_created,
                 "clusterer": result.clusterer,
             },
         )
@@ -275,6 +356,9 @@ def create_analysis_run(payload: AnalysisRunRequest) -> dict:
             "job": finished_job,
             "clusters_created": result.clusters_created,
             "evidence_created": result.evidence_created,
+            "issues_created": result.issues_created,
+            "issue_evidence_created": result.issue_evidence_created,
+            "axis_suggestions_created": result.axis_suggestions_created,
             "reviews_analyzed": result.reviews_analyzed,
             "clusterer": result.clusterer,
             "message": result.message,
@@ -299,6 +383,9 @@ def create_analysis_run(payload: AnalysisRunRequest) -> dict:
             "job": failed_job,
             "clusters_created": 0,
             "evidence_created": 0,
+            "issues_created": 0,
+            "issue_evidence_created": 0,
+            "axis_suggestions_created": 0,
             "reviews_analyzed": 0,
             "clusterer": "failed",
             "message": str(exc),

@@ -6,7 +6,7 @@ import duckdb
 
 from .db import connect, utcnow
 from .config import get_settings
-from .models import EventIn, GameIn, GameUpdate, ReportIn
+from .models import AxisIn, AxisUpdate, EventIn, GameIn, GameUpdate, ReportIn
 
 
 REVIEW_COLUMNS = """
@@ -149,8 +149,20 @@ def delete_game(app_id: str) -> bool:
             conn.execute(f"DELETE FROM review_embeddings WHERE review_id IN ({placeholders})", review_ids)
             conn.execute(f"DELETE FROM review_clusters WHERE review_id IN ({placeholders})", review_ids)
             conn.execute(f"DELETE FROM evidence WHERE review_id IN ({placeholders})", review_ids)
+            conn.execute(f"DELETE FROM issue_evidence WHERE review_id IN ({placeholders})", review_ids)
+            conn.execute(f"DELETE FROM issue_units WHERE review_id IN ({placeholders})", review_ids)
         if run_ids:
             placeholders = ",".join(["?"] * len(run_ids))
+            issue_ids = [
+                row[0]
+                for row in conn.execute(
+                    f"SELECT id FROM issues WHERE analysis_run_id IN ({placeholders})",
+                    run_ids,
+                ).fetchall()
+            ]
+            if issue_ids:
+                issue_placeholders = ",".join(["?"] * len(issue_ids))
+                conn.execute(f"DELETE FROM issue_evidence WHERE issue_id IN ({issue_placeholders})", issue_ids)
             cluster_ids = [
                 row[0]
                 for row in conn.execute(
@@ -168,6 +180,9 @@ def delete_game(app_id: str) -> bool:
             conn.execute(f"DELETE FROM evidence WHERE analysis_run_id IN ({placeholders})", run_ids)
             conn.execute(f"DELETE FROM claims WHERE analysis_run_id IN ({placeholders})", run_ids)
             conn.execute(f"DELETE FROM review_quality WHERE analysis_run_id IN ({placeholders})", run_ids)
+            conn.execute(f"DELETE FROM issue_evidence WHERE analysis_run_id IN ({placeholders})", run_ids)
+            conn.execute(f"DELETE FROM issue_units WHERE analysis_run_id IN ({placeholders})", run_ids)
+            conn.execute(f"DELETE FROM issues WHERE analysis_run_id IN ({placeholders})", run_ids)
             conn.execute(f"DELETE FROM reports WHERE analysis_run_id IN ({placeholders})", run_ids)
             conn.execute(f"DELETE FROM analysis_runs WHERE id IN ({placeholders})", run_ids)
 
@@ -187,9 +202,14 @@ def delete_game(app_id: str) -> bool:
             conn.execute("DELETE FROM evidence WHERE analysis_run_id IS NULL")
             conn.execute("DELETE FROM claims WHERE analysis_run_id IS NULL")
             conn.execute("DELETE FROM clusters WHERE analysis_run_id IS NULL")
+            conn.execute("DELETE FROM issue_evidence WHERE analysis_run_id IS NULL")
+            conn.execute("DELETE FROM issue_units WHERE analysis_run_id IS NULL")
+            conn.execute("DELETE FROM issues WHERE analysis_run_id IS NULL")
 
         conn.execute("DELETE FROM reports WHERE app_id = ?", [app_id])
         conn.execute("DELETE FROM events WHERE app_id = ?", [app_id])
+        conn.execute("DELETE FROM axis_suggestions WHERE app_id = ?", [app_id])
+        conn.execute("DELETE FROM analysis_axes WHERE app_id = ?", [app_id])
         conn.execute("DELETE FROM reviews WHERE app_id = ?", [app_id])
         conn.execute("DELETE FROM games WHERE app_id = ?", [app_id])
         return True
@@ -238,6 +258,11 @@ def _hydrate_game_row(conn: duckdb.DuckDBPyConnection, row: dict[str, Any]) -> d
     if latest_run_id is not None:
         cluster_count = conn.execute("SELECT count(*) FROM clusters WHERE analysis_run_id = ?", [latest_run_id]).fetchone()[0]
         evidence_count = conn.execute("SELECT count(*) FROM evidence WHERE analysis_run_id = ?", [latest_run_id]).fetchone()[0]
+        issue_count = conn.execute("SELECT count(*) FROM issues WHERE analysis_run_id = ?", [latest_run_id]).fetchone()[0]
+        confirmed_issue_count = conn.execute(
+            "SELECT count(*) FROM issues WHERE analysis_run_id = ? AND status IN ('confirmed', 'strength')",
+            [latest_run_id],
+        ).fetchone()[0]
         last_analysis_at = conn.execute(
             "SELECT coalesce(finished_at, started_at) FROM analysis_runs WHERE id = ?",
             [latest_run_id],
@@ -245,10 +270,14 @@ def _hydrate_game_row(conn: duckdb.DuckDBPyConnection, row: dict[str, Any]) -> d
     elif app_id == default_app_id():
         cluster_count = conn.execute("SELECT count(*) FROM clusters WHERE analysis_run_id IS NULL").fetchone()[0]
         evidence_count = conn.execute("SELECT count(*) FROM evidence WHERE analysis_run_id IS NULL").fetchone()[0]
+        issue_count = 0
+        confirmed_issue_count = 0
         last_analysis_at = None
     else:
         cluster_count = 0
         evidence_count = 0
+        issue_count = 0
+        confirmed_issue_count = 0
         last_analysis_at = None
 
     review_count = int(row.get("review_count") or 0)
@@ -263,6 +292,8 @@ def _hydrate_game_row(conn: duckdb.DuckDBPyConnection, row: dict[str, Any]) -> d
     row["positive_ratio"] = row.get("positive_ratio")
     row["cluster_count"] = int(cluster_count)
     row["evidence_count"] = int(evidence_count)
+    row["issue_count"] = int(issue_count)
+    row["confirmed_issue_count"] = int(confirmed_issue_count)
     row["last_sync_at"] = row.get("last_refreshed_at") or row.get("latest_review_at")
     row["last_analysis_at"] = last_analysis_at
     row.pop("stored_status", None)
@@ -345,12 +376,43 @@ def dashboard_summary(app_id: str | None = None) -> dict[str, Any]:
                 "SELECT count(*) FROM evidence WHERE analysis_run_id = ?",
                 [latest_run_id],
             ).fetchone()[0]
+            issues = conn.execute(
+                "SELECT count(*) FROM issues WHERE analysis_run_id = ?",
+                [latest_run_id],
+            ).fetchone()[0]
+            confirmed_issues = conn.execute(
+                "SELECT count(*) FROM issues WHERE analysis_run_id = ? AND status IN ('confirmed', 'strength')",
+                [latest_run_id],
+            ).fetchone()[0]
+            issue_evidence_items = conn.execute(
+                "SELECT count(*) FROM issue_evidence WHERE analysis_run_id = ?",
+                [latest_run_id],
+            ).fetchone()[0]
+            assigned_negative = conn.execute(
+                """
+                SELECT count(DISTINCT review_id)
+                FROM issue_units
+                WHERE analysis_run_id = ?
+                  AND voted_up = false
+                  AND NOT is_quarantined
+                  AND intent IN ('complaint', 'request', 'bug')
+                """,
+                [latest_run_id],
+            ).fetchone()[0]
         elif resolved_app_id == default_app_id():
             clusters = conn.execute("SELECT count(*) FROM clusters WHERE analysis_run_id IS NULL").fetchone()[0]
             evidence_items = conn.execute("SELECT count(*) FROM evidence WHERE analysis_run_id IS NULL").fetchone()[0]
+            issues = 0
+            confirmed_issues = 0
+            issue_evidence_items = 0
+            assigned_negative = 0
         else:
             clusters = 0
             evidence_items = 0
+            issues = 0
+            confirmed_issues = 0
+            issue_evidence_items = 0
+            assigned_negative = 0
     keys = [
         "total_reviews",
         "positive_reviews",
@@ -364,6 +426,11 @@ def dashboard_summary(app_id: str | None = None) -> dict[str, Any]:
     data = dict(zip(keys, row))
     data["clusters"] = clusters
     data["evidence_items"] = evidence_items
+    data["issues"] = int(issues)
+    data["confirmed_issues"] = int(confirmed_issues)
+    data["issue_evidence_items"] = int(issue_evidence_items)
+    negative_reviews = int(data.get("negative_reviews") or 0)
+    data["issue_coverage"] = (int(assigned_negative) / negative_reviews) if negative_reviews else None
     return data
 
 
@@ -442,6 +509,28 @@ def _latest_completed_analysis_run_id(conn: duckdb.DuckDBPyConnection, app_id: s
     clauses = [
         "status = 'succeeded'",
         "EXISTS (SELECT 1 FROM clusters c WHERE c.analysis_run_id = analysis_runs.id)",
+    ]
+    params: list[Any] = []
+    if app_id:
+        clauses.append("app_id = ?")
+        params.append(app_id)
+    row = conn.execute(
+        f"""
+        SELECT id
+        FROM analysis_runs
+        WHERE {" AND ".join(clauses)}
+        ORDER BY coalesce(finished_at, started_at) DESC, id DESC
+        LIMIT 1
+        """,
+        params,
+    ).fetchone()
+    return int(row[0]) if row else None
+
+
+def _latest_completed_issue_run_id(conn: duckdb.DuckDBPyConnection, app_id: str | None = None) -> int | None:
+    clauses = [
+        "status = 'succeeded'",
+        "EXISTS (SELECT 1 FROM issues i WHERE i.analysis_run_id = analysis_runs.id)",
     ]
     params: list[Any] = []
     if app_id:
@@ -629,6 +718,332 @@ def list_claims(app_id: str | None = None, cluster_id: int | None = None) -> lis
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY confidence DESC, created_at DESC, id DESC"
         return rows_to_dicts(conn.execute(sql, params))
+
+
+def list_issues(
+    app_id: str | None = None,
+    status: str | None = None,
+    intent: str | None = None,
+    aspect: str | None = None,
+    limit: int = 80,
+) -> list[dict[str, Any]]:
+    sql = """
+        SELECT
+            i.*,
+            count(ie.id) AS evidence_count
+        FROM issues i
+        LEFT JOIN issue_evidence ie ON ie.issue_id = i.id
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    resolved_app_id = resolve_app_id(app_id)
+    with connect() as conn:
+        latest_run_id = _latest_completed_issue_run_id(conn, resolved_app_id)
+        if latest_run_id is None:
+            return []
+        clauses.append("i.analysis_run_id = ?")
+        params.append(latest_run_id)
+        if status:
+            clauses.append("i.status = ?")
+            params.append(status)
+        if intent:
+            clauses.append("i.intent = ?")
+            params.append(intent)
+        if aspect:
+            clauses.append("i.aspect = ?")
+            params.append(aspect)
+        sql += " WHERE " + " AND ".join(clauses)
+        sql += """
+            GROUP BY
+                i.id, i.analysis_run_id, i.app_id, i.title, i.summary, i.intent,
+                i.aspect, i.status, i.confidence_band, i.confidence, i.priority_score,
+                i.review_count, i.unique_review_count, i.unit_count, i.complaint_count,
+                i.praise_count, i.request_count, i.bug_count, i.positive_ratio,
+                i.language_counts, i.top_terms, i.why_it_matters, i.recommended_action,
+                i.warnings, i.source, i.model, i.created_at
+            ORDER BY
+                CASE i.status
+                    WHEN 'confirmed' THEN 1
+                    WHEN 'strength' THEN 2
+                    WHEN 'needs_review' THEN 3
+                    ELSE 4
+                END,
+                i.priority_score DESC,
+                i.unique_review_count DESC,
+                i.id
+            LIMIT ?
+        """
+        params.append(limit)
+        rows = rows_to_dicts(conn.execute(sql, params))
+    return [_hydrate_issue_row(row) for row in rows]
+
+
+def list_issue_evidence(
+    issue_id: int,
+    limit: int = 50,
+    language: str | None = None,
+) -> list[dict[str, Any]]:
+    clauses = ["ie.issue_id = ?"]
+    params: list[Any] = [issue_id]
+    if language:
+        clauses.append("ie.language = ?")
+        params.append(language)
+    params.append(limit)
+    with connect() as conn:
+        return rows_to_dicts(
+            conn.execute(
+                f"""
+                SELECT
+                    ie.*,
+                    r.review AS review_text,
+                    r.playtime_at_review,
+                    r.steam_created_at
+                FROM issue_evidence ie
+                LEFT JOIN reviews r ON r.recommendation_id = ie.review_id
+                WHERE {" AND ".join(clauses)}
+                ORDER BY
+                    CASE coalesce(ie.verifier_verdict, 'match')
+                        WHEN 'match' THEN 1
+                        WHEN 'partial' THEN 2
+                        WHEN 'reject' THEN 3
+                        ELSE 4
+                    END,
+                    coalesce(ie.quality_score, 0.5) DESC,
+                    ie.created_at DESC,
+                    ie.id DESC
+                LIMIT ?
+                """,
+                params,
+            )
+        )
+
+
+def issue_summary(app_id: str | None = None) -> dict[str, Any]:
+    resolved_app_id = resolve_app_id(app_id)
+    with connect() as conn:
+        latest_run_id = _latest_completed_issue_run_id(conn, resolved_app_id)
+        if latest_run_id is None:
+            return {
+                "issues": 0,
+                "confirmed_issues": 0,
+                "needs_review_issues": 0,
+                "strength_issues": 0,
+                "diagnostic_issues": 0,
+                "issue_evidence_items": 0,
+                "issue_units": 0,
+                "quarantined_units": 0,
+                "issue_coverage": None,
+            }
+        row = conn.execute(
+            """
+            SELECT
+                count(*) AS issues,
+                count(*) FILTER (WHERE status = 'confirmed') AS confirmed_issues,
+                count(*) FILTER (WHERE status = 'needs_review') AS needs_review_issues,
+                count(*) FILTER (WHERE status = 'strength') AS strength_issues,
+                count(*) FILTER (WHERE status = 'diagnostic') AS diagnostic_issues
+            FROM issues
+            WHERE analysis_run_id = ?
+            """,
+            [latest_run_id],
+        ).fetchone()
+        issue_evidence_items = conn.execute(
+            "SELECT count(*) FROM issue_evidence WHERE analysis_run_id = ?",
+            [latest_run_id],
+        ).fetchone()[0]
+        unit_row = conn.execute(
+            """
+            SELECT
+                count(*) AS issue_units,
+                count(*) FILTER (WHERE is_quarantined) AS quarantined_units,
+                count(DISTINCT review_id) FILTER (
+                    WHERE voted_up = false AND NOT is_quarantined AND intent IN ('complaint', 'request', 'bug')
+                ) AS assigned_negative
+            FROM issue_units
+            WHERE analysis_run_id = ?
+            """,
+            [latest_run_id],
+        ).fetchone()
+        negative_reviews = conn.execute(
+            "SELECT count(*) FROM reviews WHERE app_id = ? AND NOT voted_up",
+            [resolved_app_id],
+        ).fetchone()[0]
+    keys = ["issues", "confirmed_issues", "needs_review_issues", "strength_issues", "diagnostic_issues"]
+    data = dict(zip(keys, row))
+    data["issue_evidence_items"] = int(issue_evidence_items)
+    data["issue_units"] = int(unit_row[0] or 0)
+    data["quarantined_units"] = int(unit_row[1] or 0)
+    data["issue_coverage"] = (int(unit_row[2] or 0) / int(negative_reviews)) if negative_reviews else None
+    return data
+
+
+def list_axes(app_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+    resolved_app_id = resolve_app_id(app_id)
+    clauses = ["(scope IN ('common', 'genre') OR app_id = ?)"]
+    params: list[Any] = [resolved_app_id]
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+    with connect() as conn:
+        return rows_to_dicts(
+            conn.execute(
+                f"""
+                SELECT *
+                FROM analysis_axes
+                WHERE {" AND ".join(clauses)}
+                ORDER BY
+                    CASE scope WHEN 'game' THEN 1 WHEN 'genre' THEN 2 ELSE 3 END,
+                    CASE status WHEN 'active' THEN 1 WHEN 'candidate' THEN 2 ELSE 3 END,
+                    label
+                """,
+                params,
+            )
+        )
+
+
+def create_axis(payload: AxisIn) -> dict[str, Any]:
+    now = utcnow()
+    app_id = resolve_app_id(payload.app_id) if payload.scope == "game" else payload.app_id
+    with connect() as conn:
+        axis_id = conn.execute(
+            """
+            INSERT INTO analysis_axes (
+                key, label, description, pattern, recommended_action,
+                scope, app_id, genre, status, source, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+            """,
+            [
+                payload.key,
+                payload.label,
+                payload.description,
+                payload.pattern,
+                payload.recommended_action,
+                payload.scope,
+                app_id,
+                payload.genre,
+                payload.status,
+                payload.source,
+                now,
+                now,
+            ],
+        ).fetchone()[0]
+        return rows_to_dicts(conn.execute("SELECT * FROM analysis_axes WHERE id = ?", [axis_id]))[0]
+
+
+def update_axis(axis_id: int, payload: AxisUpdate) -> dict[str, Any] | None:
+    updates = payload.model_dump(exclude_unset=True)
+    with connect() as conn:
+        if not conn.execute("SELECT 1 FROM analysis_axes WHERE id = ?", [axis_id]).fetchone():
+            return None
+        if updates:
+            assignments = []
+            params: list[Any] = []
+            for key, value in updates.items():
+                assignments.append(f"{key} = ?")
+                params.append(value)
+            assignments.append("updated_at = ?")
+            params.extend([utcnow(), axis_id])
+            conn.execute(f"UPDATE analysis_axes SET {', '.join(assignments)} WHERE id = ?", params)
+        return rows_to_dicts(conn.execute("SELECT * FROM analysis_axes WHERE id = ?", [axis_id]))[0]
+
+
+def list_axis_suggestions(app_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+    resolved_app_id = resolve_app_id(app_id)
+    with connect() as conn:
+        latest_run_id = _latest_completed_issue_run_id(conn, resolved_app_id)
+        if latest_run_id is None:
+            return []
+        clauses = ["app_id = ?", "analysis_run_id = ?", "evidence_count >= 5"]
+        params: list[Any] = [resolved_app_id, latest_run_id]
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        rows = rows_to_dicts(
+            conn.execute(
+                f"""
+                SELECT *
+                FROM axis_suggestions
+                WHERE {" AND ".join(clauses)}
+                ORDER BY
+                    CASE status WHEN 'pending' THEN 1 WHEN 'approved' THEN 2 WHEN 'merged' THEN 3 ELSE 4 END,
+                    evidence_count DESC,
+                    id DESC
+                """,
+                params,
+            )
+        )
+    return [_hydrate_axis_suggestion(row) for row in rows]
+
+
+def approve_axis_suggestion(suggestion_id: int) -> dict[str, Any] | None:
+    with connect() as conn:
+        rows = rows_to_dicts(conn.execute("SELECT * FROM axis_suggestions WHERE id = ?", [suggestion_id]))
+        if not rows:
+            return None
+        suggestion = _hydrate_axis_suggestion(rows[0])
+        key = _axis_key_from_label(str(suggestion["label"]))
+        axis_id = conn.execute(
+            """
+            INSERT INTO analysis_axes (
+                key, label, description, pattern, recommended_action,
+                scope, app_id, status, source, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 'game', ?, 'active', 'ai', ?, ?)
+            RETURNING id
+            """,
+            [
+                key,
+                suggestion["label"],
+                suggestion["rationale"],
+                suggestion["suggested_pattern"],
+                "승인한 평가축으로 재분석해 실제 문제/강점인지 확인하세요.",
+                suggestion.get("app_id"),
+                utcnow(),
+                utcnow(),
+            ],
+        ).fetchone()[0]
+        conn.execute(
+            """
+            UPDATE axis_suggestions
+            SET status = 'approved', target_axis_id = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            [axis_id, utcnow(), suggestion_id],
+        )
+        row = rows_to_dicts(conn.execute("SELECT * FROM axis_suggestions WHERE id = ?", [suggestion_id]))[0]
+    return _hydrate_axis_suggestion(row)
+
+
+def merge_axis_suggestion(suggestion_id: int, target_axis_id: int) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not conn.execute("SELECT 1 FROM axis_suggestions WHERE id = ?", [suggestion_id]).fetchone():
+            return None
+        if not conn.execute("SELECT 1 FROM analysis_axes WHERE id = ?", [target_axis_id]).fetchone():
+            return None
+        conn.execute(
+            """
+            UPDATE axis_suggestions
+            SET status = 'merged', target_axis_id = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            [target_axis_id, utcnow(), suggestion_id],
+        )
+        row = rows_to_dicts(conn.execute("SELECT * FROM axis_suggestions WHERE id = ?", [suggestion_id]))[0]
+    return _hydrate_axis_suggestion(row)
+
+
+def ignore_axis_suggestion(suggestion_id: int) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not conn.execute("SELECT 1 FROM axis_suggestions WHERE id = ?", [suggestion_id]).fetchone():
+            return None
+        conn.execute(
+            "UPDATE axis_suggestions SET status = 'ignored', updated_at = ? WHERE id = ?",
+            [utcnow(), suggestion_id],
+        )
+        row = rows_to_dicts(conn.execute("SELECT * FROM axis_suggestions WHERE id = ?", [suggestion_id]))[0]
+    return _hydrate_axis_suggestion(row)
 
 
 def list_reports(app_id: str | None = None) -> list[dict[str, Any]]:
@@ -1073,3 +1488,37 @@ def _hydrate_cluster_row(row: dict[str, Any]) -> dict[str, Any]:
     row["top_keywords"] = top_keywords
     row["insight"] = insight
     return row
+
+
+def _hydrate_issue_row(row: dict[str, Any]) -> dict[str, Any]:
+    row["language_counts"] = _loads_int_dict(row.get("language_counts"))
+    row["top_terms"] = _loads_list(row.get("top_terms"))
+    row["warnings"] = _loads_list(row.get("warnings"))
+    row["evidence_count"] = int(row.get("evidence_count") or 0)
+    return row
+
+
+def _hydrate_axis_suggestion(row: dict[str, Any]) -> dict[str, Any]:
+    row["language_counts"] = _loads_int_dict(row.get("language_counts"))
+    row["example_review_ids"] = _loads_list(row.get("example_review_ids"))
+    return row
+
+
+def _axis_key_from_label(label: str) -> str:
+    compact = "".join(ch.lower() if ch.isalnum() else "_" for ch in label)
+    compact = "_".join(part for part in compact.split("_") if part)
+    return (compact or "custom_axis")[:64]
+
+
+def _loads_int_dict(value: Any) -> dict[str, int]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return {str(key): int(raw or 0) for key, raw in value.items()}
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    if isinstance(parsed, dict):
+        return {str(key): int(raw or 0) for key, raw in parsed.items()}
+    return {}

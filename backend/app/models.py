@@ -32,6 +32,8 @@ class Game(BaseModel):
     positive_ratio: float | None = None
     cluster_count: int = 0
     evidence_count: int = 0
+    issue_count: int = 0
+    confirmed_issue_count: int = 0
     last_sync_at: datetime | None = None
     last_analysis_at: datetime | None = None
     next_action: str
@@ -64,6 +66,10 @@ class DashboardSummary(BaseModel):
     languages: int
     clusters: int
     evidence_items: int
+    issues: int = 0
+    confirmed_issues: int = 0
+    issue_evidence_items: int = 0
+    issue_coverage: float | None = None
     latest_review_at: datetime | None
 
 
@@ -139,6 +145,147 @@ class Claim(BaseModel):
     claim_text: str
     confidence: float
     created_at: datetime
+
+
+class IssueUnit(BaseModel):
+    id: int
+    analysis_run_id: int
+    app_id: str | None = None
+    review_id: str
+    unit_index: int
+    unit_text: str
+    language: str | None = None
+    voted_up: bool | None = None
+    intent: str
+    aspect: str
+    sentiment: str
+    quality_score: float
+    quality_flags: list[str] = Field(default_factory=list)
+    is_quarantined: bool
+    quarantine_reason: str | None = None
+    text_hash: str | None = None
+    created_at: datetime
+
+
+class Issue(BaseModel):
+    id: int
+    analysis_run_id: int
+    app_id: str | None = None
+    title: str
+    summary: str
+    intent: str
+    aspect: str
+    status: str
+    confidence_band: str
+    confidence: float
+    priority_score: float
+    review_count: int
+    unique_review_count: int
+    unit_count: int
+    complaint_count: int
+    praise_count: int
+    request_count: int
+    bug_count: int
+    positive_ratio: float | None = None
+    language_counts: dict[str, int] = Field(default_factory=dict)
+    top_terms: list[str] = Field(default_factory=list)
+    why_it_matters: str | None = None
+    recommended_action: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    evidence_count: int = 0
+    source: str | None = None
+    model: str | None = None
+    created_at: datetime
+
+
+class IssueEvidence(BaseModel):
+    id: int
+    issue_id: int
+    unit_id: int | None = None
+    analysis_run_id: int
+    app_id: str | None = None
+    review_id: str
+    quote: str
+    evidence_role: str
+    language: str | None = None
+    voted_up: bool | None = None
+    quality_score: float | None = None
+    verifier_verdict: str | None = None
+    summary_ko: str | None = None
+    subissue: str | None = None
+    verifier_reason: str | None = None
+    review_text: str | None = None
+    playtime_at_review: int | None = None
+    steam_created_at: datetime | None = None
+    created_at: datetime
+
+
+class IssueSummary(BaseModel):
+    issues: int = 0
+    confirmed_issues: int = 0
+    needs_review_issues: int = 0
+    strength_issues: int = 0
+    diagnostic_issues: int = 0
+    issue_evidence_items: int = 0
+    issue_units: int = 0
+    quarantined_units: int = 0
+    issue_coverage: float | None = None
+
+
+class AxisIn(BaseModel):
+    key: str
+    label: str
+    description: str
+    pattern: str
+    recommended_action: str
+    scope: Literal["common", "genre", "game"] = "game"
+    app_id: str | None = None
+    genre: str | None = None
+    status: Literal["active", "disabled", "candidate"] = "active"
+    source: Literal["system", "ai", "user"] = "user"
+
+
+class AxisUpdate(BaseModel):
+    label: str | None = None
+    description: str | None = None
+    pattern: str | None = None
+    recommended_action: str | None = None
+    scope: Literal["common", "genre", "game"] | None = None
+    app_id: str | None = None
+    genre: str | None = None
+    status: Literal["active", "disabled", "candidate"] | None = None
+
+
+class AnalysisAxis(BaseModel):
+    id: int
+    key: str
+    label: str
+    description: str
+    pattern: str
+    recommended_action: str
+    scope: str
+    app_id: str | None = None
+    genre: str | None = None
+    status: str
+    source: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AxisSuggestion(BaseModel):
+    id: int
+    analysis_run_id: int
+    app_id: str | None = None
+    label: str
+    rationale: str
+    suggested_pattern: str
+    evidence_count: int
+    language_counts: dict[str, int] = Field(default_factory=dict)
+    example_review_ids: list[str] = Field(default_factory=list)
+    status: str
+    target_axis_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class ReportIn(BaseModel):
@@ -223,6 +370,9 @@ class AnalysisRunResult(BaseModel):
     job: Job
     clusters_created: int
     evidence_created: int
+    issues_created: int = 0
+    issue_evidence_created: int = 0
+    axis_suggestions_created: int = 0
     reviews_analyzed: int
     clusterer: str
     message: str

@@ -22,6 +22,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
             ("GET", "/api/clusters", None),
             ("GET", "/api/evidence", None),
             ("GET", "/api/claims", None),
+            ("GET", "/api/issues", None),
+            ("GET", "/api/issues/summary", None),
             ("GET", "/api/reports", None),
             ("GET", "/api/settings", None),
             ("GET", "/api/settings/models", None),
@@ -67,6 +69,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
         assert analysis_payload["reviews_analyzed"] >= 1
         assert analysis_payload["clusters_created"] >= 1
         assert analysis_payload["evidence_created"] >= 1
+        assert "issues_created" in analysis_payload
+        assert "issue_evidence_created" in analysis_payload
 
         scoped_refresh = client.post(
             "/api/refresh-steam",
@@ -83,11 +87,18 @@ with tempfile.TemporaryDirectory() as tmpdir:
             "/api/clusters",
             "/api/evidence",
             "/api/claims",
+            "/api/issues/summary",
             "/api/timeline?bucket=day",
         ]:
             response = client.get(path)
             response.raise_for_status()
             assert response.json()
+
+        issues_payload = client.get("/api/issues").json()
+        if issues_payload:
+            issue_id = issues_payload[0]["id"]
+            issue_evidence = client.get(f"/api/issues/{issue_id}/evidence")
+            issue_evidence.raise_for_status()
 
         cluster_id = client.get("/api/clusters").json()[0]["id"]
         cluster_payload = client.get("/api/clusters").json()
