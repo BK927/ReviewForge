@@ -1,6 +1,10 @@
 # ReviewForge API Contract
 
-Base URL: `http://127.0.0.1:8000/api`
+Server origin: `http://127.0.0.1:8000`
+
+Frontend code uses `http://127.0.0.1:8000/api` as its API base and appends
+paths such as `/dashboard`. Endpoint paths below include the full server path
+so generated clients do not accidentally call `/api/api/...`.
 
 This is the current v1 local API. It is intentionally simple first: aggregate
 screens read from DuckDB, while long-running analysis work is represented as
@@ -25,6 +29,18 @@ jobs that the UI can poll.
 - `GET /api/clusters`
 - `GET /api/clusters/{cluster_id}/reviews`
 - `GET /api/evidence`
+- `GET /api/claims`
+- `GET /api/issues`
+- `GET /api/issues/summary`
+- `GET /api/issues/{issue_id}/evidence`
+- `GET /api/axes`
+- `POST /api/axes`
+- `PATCH /api/axes/{axis_id}`
+- `GET /api/axis-suggestions`
+- `POST /api/axis-suggestions/{suggestion_id}/approve`
+- `POST /api/axis-suggestions/{suggestion_id}/merge`
+- `POST /api/axis-suggestions/{suggestion_id}/ignore`
+- `POST /api/axis-suggestions/{suggestion_id}/keep`
 - `GET /api/reports`
 - `POST /api/reports`
 - `GET /api/settings`
@@ -85,6 +101,11 @@ Steam app when omitted:
 - `GET /api/events/{event_id}/impact`
 - `GET /api/clusters`
 - `GET /api/evidence`
+- `GET /api/claims`
+- `GET /api/issues`
+- `GET /api/issues/summary`
+- `GET /api/axes`
+- `GET /api/axis-suggestions`
 
 `POST /api/analysis-runs` runs a local synchronous v1 analysis and records both
 a job and an analysis run. Supported request fields:
@@ -95,6 +116,12 @@ a job and an analysis run. Supported request fields:
 - `min_cluster_size`
 - `generate_ai_summary`
 - `llm_provider`
+- `llm_model`
+- `min_quality_score`
+- `exclude_duplicate_evidence`
+- `use_lmstudio_labels`
+- `max_clusters`
+- `evidence_per_claim`
 
 The backend prefers GPU-backed SentenceTransformers embeddings when an embedding
 model such as `intfloat/multilingual-e5-large` is requested. If that path is not
@@ -109,6 +136,47 @@ while still tolerating seed data.
 
 `GET /api/events/{event_id}/impact` compares review windows before and after an
 event. Treat the result as a temporal comparison, not a causal claim.
+
+## Issue Board, Claims, and Axes
+
+The issue board is the newer evidence-backed planning layer. It should move the
+product away from broad cluster labels and toward concrete, review-linked
+planning cards.
+
+- `GET /api/claims` returns generated cluster-level claims. It accepts optional
+  `app_id` and `cluster_id`.
+- `GET /api/issues` returns issue cards. It accepts optional `app_id`, `status`,
+  `intent`, `aspect`, and `limit`.
+- `GET /api/issues/summary` returns issue counts, evidence counts, quarantined
+  unit counts, and coverage for the latest run.
+- `GET /api/issues/{issue_id}/evidence` returns linked evidence units for one
+  issue. It accepts `limit` and optional `language`.
+- `GET /api/axes` returns active, disabled, or candidate analysis axes. It
+  accepts optional `app_id` and `status`.
+- `POST /api/axes` creates a user-defined analysis axis from `key`, `label`,
+  `description`, `pattern`, `recommended_action`, `scope`, optional `app_id`,
+  optional `genre`, `status`, and `source`.
+- `PATCH /api/axes/{axis_id}` updates editable axis metadata.
+- `GET /api/axis-suggestions` returns quality-gated unmapped claim candidates.
+  It accepts optional `app_id`, `status`, and `include_raw`.
+- `POST /api/axis-suggestions/{suggestion_id}/approve` converts a suggestion
+  into an active game-specific axis only when its quality gate passed.
+- `POST /api/axis-suggestions/{suggestion_id}/merge?target_axis_id=...` merges
+  a suggestion into an existing axis.
+- `POST /api/axis-suggestions/{suggestion_id}/ignore` hides a suggestion.
+- `POST /api/axis-suggestions/{suggestion_id}/keep` marks a passed suggestion
+  as a one-off insight without creating or merging an axis.
+
+Issue evidence can carry `verifier_verdict`, `summary_ko`, `subissue`, and
+`verifier_reason`. Final issue cards should prefer verified `match` evidence;
+`partial` and `reject` evidence are audit context, not primary proof.
+
+## Documentation Guard
+
+`scripts/check_docs.py` introspects FastAPI routes and fails if any route is
+missing from this contract. When changing API routes, update this file in the
+same change. If implementation needs to break product intent, follow
+`AGENTS.md` and update `docs/project-intent.md` after explicit approval.
 
 `GET /api/settings/models` reports the local GPU embedding provider and LM
 Studio availability. It checks LM Studio native v1 at

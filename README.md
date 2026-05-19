@@ -7,8 +7,8 @@ Local Steam review analysis workspace.
 - Frontend: SvelteKit + TypeScript
 - Backend: FastAPI
 - Database: DuckDB
-- Analysis: Python workers
-- LLM: LM Studio by default, with Claude/OpenAI-ready settings
+- Analysis: synchronous Python analysis pipeline with deterministic fallbacks
+- LLM: LM Studio integration, using OpenAI-compatible local endpoints where available
 
 ## Local Run
 
@@ -26,6 +26,12 @@ The app exposes:
 Run checks:
 
 ```powershell
+.\scripts\check.ps1
+```
+
+Or run the major checks individually:
+
+```powershell
 cd backend
 uv run python scripts\smoke_test.py
 
@@ -33,3 +39,8 @@ cd ..\frontend
 npm run check
 npm run build
 ```
+
+`scripts\check.ps1` and the backend smoke test include a documentation guard:
+FastAPI routes must be listed in `docs\api-contract.md`, and the AI/project
+intent guardrails in `AGENTS.md` and `docs\project-intent.md` must remain in
+place.

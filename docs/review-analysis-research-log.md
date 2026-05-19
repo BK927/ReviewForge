@@ -3,6 +3,12 @@
 이 문서는 ReviewForge의 Steam 리뷰 분석 로직을 개선하기 위한 연구 기록이다.
 목표는 단순한 클러스터 목록이 아니라, 기획자가 실제 의사결정에 사용할 수 있는 다국어 리뷰 기반 이슈 보드를 만드는 것이다.
 
+## 현재 구현 상태 메모
+
+이 문서의 실험 섹션은 당시의 연구 기록이므로 "production 코드는 변경하지 않았다"나 "다음 구현 조건"처럼 과거/미래 시점 표현이 남아 있을 수 있다. 현재 코드에는 이미 `issue_units`, `issues`, `issue_evidence`, `analysis_axes`, `axis_suggestions`, `verifier_verdict`, `summary_ko`가 일부 구현되어 있다.
+
+현재 구현은 완성형 하이브리드 파이프라인이 아니라, 규칙 기반 이슈 생성과 선택적 LM Studio 검증을 포함한 중간 단계다. 코드를 바꿀 때는 아래 연구 결론을 의도 문서로 해석하되, 현재 API와 DB 계약은 `docs/api-contract.md`와 `docs/project-intent.md`를 우선 확인한다.
+
 ## 2026-05-20 연구 목적
 
 현재 문제는 다음과 같다.

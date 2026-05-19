@@ -30,6 +30,9 @@ uv run python -m compileall app scripts
 uv run python scripts\smoke_test.py
 ```
 
+The smoke test also runs the repository documentation guard, so newly added
+FastAPI routes must be documented in `docs\api-contract.md`.
+
 Then open:
 
 - `http://127.0.0.1:8000/health`
@@ -44,8 +47,9 @@ Then open:
   and `tags`.
 - `PUT` or `PATCH /api/games/{app_id}` updates the editable metadata.
 - `DELETE /api/games/{app_id}` removes the game and its local scoped data.
-- Dashboard, languages, events, reports, timeline, clusters, and evidence accept
-  `app_id`; omitting it keeps the previous default-app behavior.
+- Dashboard, languages, events, reports, timeline, clusters, evidence, claims,
+  issues, axes, and axis suggestions accept `app_id`; omitting it keeps the
+  previous default-app behavior.
 - Steam refresh and analysis requests automatically ensure their target game row
   exists.
 

@@ -6,6 +6,11 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from scripts.check_docs import check_repository
+
+doc_errors = check_repository(ROOT)
+assert not doc_errors, "Documentation guard failed:\n" + "\n".join(f"- {error}" for error in doc_errors)
+
 with tempfile.TemporaryDirectory() as tmpdir:
     os.environ["REVIEWFORGE_DB_PATH"] = str(Path(tmpdir) / "reviewforge-smoke.duckdb")
 
