@@ -4,7 +4,46 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+class GameIn(BaseModel):
+    app_id: str
+    name: str | None = None
+    short_name: str | None = None
+    note: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    status: str | None = None
+
+
+class GameUpdate(BaseModel):
+    name: str | None = None
+    short_name: str | None = None
+    note: str | None = None
+    tags: list[str] | None = None
+    status: str | None = None
+
+
+class Game(BaseModel):
+    app_id: str
+    name: str
+    short_name: str | None = None
+    note: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    status: str
+    language_count: int = 0
+    positive_ratio: float | None = None
+    cluster_count: int = 0
+    evidence_count: int = 0
+    last_sync_at: datetime | None = None
+    last_analysis_at: datetime | None = None
+    next_action: str
+    created_at: datetime
+    updated_at: datetime
+    last_refreshed_at: datetime | None = None
+    review_count: int = 0
+    latest_review_at: datetime | None = None
+
+
 class EventIn(BaseModel):
+    app_id: str | None = None
     title: str
     event_type: str = Field(default="note")
     description: str | None = None
@@ -12,6 +51,7 @@ class EventIn(BaseModel):
 
 
 class Event(EventIn):
+    app_id: str
     id: int
     created_at: datetime
 
@@ -78,12 +118,14 @@ class Evidence(BaseModel):
 
 
 class ReportIn(BaseModel):
+    app_id: str | None = None
     title: str
     summary: str
     filters: dict[str, Any] = Field(default_factory=dict)
 
 
 class Report(ReportIn):
+    app_id: str
     id: int
     analysis_run_id: int | None = None
     created_at: datetime
@@ -108,7 +150,7 @@ class Job(BaseModel):
 
 class RefreshRequest(BaseModel):
     app_id: str | None = None
-    max_reviews: int = Field(default=100, ge=1, le=5000)
+    max_reviews: int = Field(default=100, ge=1, le=50000)
     language: str | None = None
     review_type: str | None = None
     purchase_type: str | None = None

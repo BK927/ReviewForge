@@ -17,6 +17,9 @@ from .models import (
     EventImpact,
     EventIn,
     Evidence,
+    Game,
+    GameIn,
+    GameUpdate,
     Job,
     LanguageSummary,
     RefreshRequest,
@@ -58,18 +61,60 @@ def api_health() -> dict[str, str]:
 
 
 @app.get("/api/dashboard", response_model=DashboardSummary)
-def dashboard() -> dict:
-    return repository.dashboard_summary()
+def dashboard(app_id: str | None = None) -> dict:
+    return repository.dashboard_summary(app_id)
 
 
 @app.get("/api/languages", response_model=list[LanguageSummary])
-def languages() -> list[dict]:
-    return repository.language_summaries()
+def languages(app_id: str | None = None) -> list[dict]:
+    return repository.language_summaries(app_id)
+
+
+@app.get("/api/games", response_model=list[Game])
+def games() -> list[dict]:
+    return repository.list_games()
+
+
+@app.post("/api/games", response_model=Game)
+def create_game(payload: GameIn) -> dict:
+    game = repository.create_game(payload)
+    if not game:
+        raise HTTPException(status_code=409, detail="Game already exists")
+    return game
+
+
+@app.get("/api/games/{app_id}", response_model=Game)
+def game(app_id: str) -> dict:
+    found = repository.get_game(app_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return found
+
+
+@app.put("/api/games/{app_id}", response_model=Game)
+def update_game(app_id: str, payload: GameUpdate) -> dict:
+    found = repository.update_game(app_id, payload)
+    if not found:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return found
+
+
+@app.patch("/api/games/{app_id}", response_model=Game)
+def patch_game(app_id: str, payload: GameUpdate) -> dict:
+    return update_game(app_id, payload)
+
+
+@app.delete("/api/games/{app_id}")
+def delete_game(app_id: str) -> dict[str, bool]:
+    deleted = repository.delete_game(app_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return {"deleted": True}
 
 
 @app.get("/api/events", response_model=list[Event])
-def events() -> list[dict]:
-    return repository.list_events()
+def events(app_id: str | None = None) -> list[dict]:
+    return repository.list_events(app_id)
 
 
 @app.post("/api/events", response_model=Event)
@@ -113,8 +158,8 @@ def evidence(cluster_id: int | None = None, evidence_type: str | None = None, ap
 
 
 @app.get("/api/reports", response_model=list[Report])
-def reports() -> list[dict]:
-    return repository.list_reports()
+def reports(app_id: str | None = None) -> list[dict]:
+    return repository.list_reports(app_id)
 
 
 @app.post("/api/reports", response_model=Report)
@@ -159,6 +204,7 @@ def analysis_runs(app_id: str | None = None) -> list[dict]:
 def create_analysis_run(payload: AnalysisRunRequest) -> dict:
     settings = get_settings()
     app_id = payload.app_id or settings.steam_app_id
+    repository.ensure_game(app_id)
     params = payload.model_dump()
     params["app_id"] = app_id
     started_job = repository.create_job(
@@ -191,6 +237,7 @@ def create_analysis_run(payload: AnalysisRunRequest) -> dict:
             generate_ai_summary=payload.generate_ai_summary,
             llm_provider=payload.llm_provider,
         )
+        repository.scope_analysis_run_outputs(run["id"], app_id)
         finished_run = repository.update_analysis_run(
             run["id"],
             status="succeeded",
@@ -278,6 +325,7 @@ def event_impact(
 async def refresh_steam(payload: RefreshRequest) -> dict:
     settings = get_settings()
     app_id = payload.app_id or settings.steam_app_id
+    repository.ensure_game(app_id)
     language = payload.language or settings.steam_language
     review_type = payload.review_type or settings.steam_review_type
     purchase_type = payload.purchase_type or settings.steam_purchase_type
@@ -308,6 +356,7 @@ async def refresh_steam(payload: RefreshRequest) -> dict:
             next_cursor = fetched.next_cursor
             has_more = fetched.has_more
         inserted, updated = repository.upsert_reviews(rows)
+        repository.mark_game_refreshed(app_id)
         repository.upsert_setting(
             "steam",
             {"app_id": app_id, "language": language, "review_type": review_type, "purchase_type": purchase_type},

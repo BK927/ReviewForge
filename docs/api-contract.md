@@ -12,6 +12,12 @@ jobs that the UI can poll.
 - `GET /api/health`
 - `GET /api/dashboard`
 - `GET /api/languages`
+- `GET /api/games`
+- `POST /api/games`
+- `GET /api/games/{app_id}`
+- `PUT /api/games/{app_id}`
+- `PATCH /api/games/{app_id}`
+- `DELETE /api/games/{app_id}`
 - `GET /api/events`
 - `POST /api/events`
 - `PUT /api/events/{event_id}`
@@ -37,7 +43,7 @@ jobs that the UI can poll.
 sample reviews. Supported request fields:
 
 - `app_id`
-- `max_reviews` up to `5000`
+- `max_reviews` up to `50000`
 - `language`
 - `review_type`
 - `purchase_type`
@@ -47,6 +53,38 @@ sample reviews. Supported request fields:
 
 The response includes `job`, `inserted_reviews`, `updated_reviews`, `source`,
 `next_cursor`, and `has_more`.
+
+## Game Management
+
+ReviewForge stores one row per Steam game in `games`. On startup, the backend
+seeds game rows from existing review `app_id` values and ensures the configured
+default Steam app exists. Refresh and analysis requests also auto-create the
+target game when needed.
+
+Game APIs:
+
+- `GET /api/games` returns games with review counts, language count, positive
+  ratio, cluster/evidence counts, latest sync/analysis timestamps, status, and
+  the next recommended action.
+- `POST /api/games` accepts `app_id`, `name`, `short_name`, `note`, `tags`, and
+  `status`.
+- `GET /api/games/{app_id}` returns one game or `404`.
+- `PUT /api/games/{app_id}` and `PATCH /api/games/{app_id}` accept `name`,
+  `short_name`, `note`, `tags`, and `status`.
+- `DELETE /api/games/{app_id}` deletes that game and its scoped local reviews,
+  events, reports, analysis runs, clusters, evidence, and embeddings.
+
+The following endpoints accept optional `app_id` and default to the configured
+Steam app when omitted:
+
+- `GET /api/dashboard`
+- `GET /api/languages`
+- `GET /api/events`
+- `GET /api/reports`
+- `GET /api/timeline`
+- `GET /api/events/{event_id}/impact`
+- `GET /api/clusters`
+- `GET /api/evidence`
 
 `POST /api/analysis-runs` runs a local synchronous v1 analysis and records both
 a job and an analysis run. Supported request fields:
@@ -58,11 +96,13 @@ a job and an analysis run. Supported request fields:
 - `generate_ai_summary`
 - `llm_provider`
 
-The backend uses local TF-IDF clustering when `sklearn` is installed. If it is
-not available, it falls back to deterministic keyword clustering and reports
-that in the analysis message. New clusters, evidence, and generated reports are
-linked to `analysis_run_id`; `GET /api/clusters` and `GET /api/evidence` prefer
-the latest completed run while still tolerating seed data.
+The backend prefers GPU-backed SentenceTransformers embeddings when an embedding
+model such as `intfloat/multilingual-e5-large` is requested. If that path is not
+available, it falls back to local TF-IDF clustering, then deterministic keyword
+clustering, and reports the chosen `clusterer` in the analysis response. New
+clusters, evidence, and generated reports are linked to `analysis_run_id`;
+`GET /api/clusters` and `GET /api/evidence` prefer the latest completed run
+while still tolerating seed data.
 
 `GET /api/timeline` accepts `app_id`, `bucket=day|week|month`, `language`,
 `playtime_min`, and `playtime_max`.
@@ -70,8 +110,10 @@ the latest completed run while still tolerating seed data.
 `GET /api/events/{event_id}/impact` compares review windows before and after an
 event. Treat the result as a temporal comparison, not a causal claim.
 
-`GET /api/settings/models` reports the built-in local provider and LM Studio
-availability at `http://127.0.0.1:1234/v1`.
+`GET /api/settings/models` reports the local GPU embedding provider and LM
+Studio availability. It checks LM Studio native v1 at
+`http://127.0.0.1:1234/api/v1/models` first, with OpenAI-compatible
+`http://127.0.0.1:1234/v1/models` as fallback.
 
 ## Source Types
 

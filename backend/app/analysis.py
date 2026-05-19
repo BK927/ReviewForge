@@ -13,8 +13,11 @@ from .db import connect, utcnow
 from .repository import rows_to_dicts
 
 
-LM_STUDIO_BASE_URL = "http://127.0.0.1:1234/v1"
-DEFAULT_EMBEDDING_MODEL = "local-hash-v1"
+DEFAULT_SEMANTIC_EMBEDDING_MODEL = "intfloat/multilingual-e5-large"
+DEFAULT_EMBEDDING_MODEL = DEFAULT_SEMANTIC_EMBEDDING_MODEL
+LOCAL_HASH_EMBEDDING_MODEL = "local-hash-v1"
+LM_STUDIO_OPENAI_BASE_URL = "http://127.0.0.1:1234/v1"
+LM_STUDIO_NATIVE_BASE_URL = "http://127.0.0.1:1234/api/v1"
 
 
 @dataclass(frozen=True)
@@ -120,20 +123,32 @@ def run_local_analysis(
             message="No reviews matched the requested analysis scope.",
         )
 
+    embedding_rows: list[list[float]] | None = None
     try:
-        groups = _cluster_with_sklearn(reviews, min_cluster_size)
-        clusterer = "sklearn_tfidf_kmeans"
-        message = "Analysis completed with local TF-IDF clustering."
+        groups, embedding_rows, device = _cluster_with_semantic_embeddings(reviews, model_name, min_cluster_size)
+        clusterer = f"sentence_transformers_minibatch_kmeans_{device}"
+        message = f"Analysis completed with GPU-ready semantic embeddings ({model_name}) on {device}."
     except Exception as exc:
-        groups = _cluster_with_keywords(reviews)
-        clusterer = "keyword_fallback"
-        message = f"sklearn unavailable or failed; used keyword fallback ({exc.__class__.__name__})."
+        try:
+            groups = _cluster_with_sklearn(reviews, min_cluster_size)
+            clusterer = "sklearn_tfidf_kmeans"
+            message = (
+                "Semantic embedding path unavailable; completed with local TF-IDF clustering "
+                f"({exc.__class__.__name__})."
+            )
+        except Exception as fallback_exc:
+            groups = _cluster_with_keywords(reviews)
+            clusterer = "keyword_fallback"
+            message = (
+                "Semantic and TF-IDF clustering failed; used keyword fallback "
+                f"({exc.__class__.__name__}, {fallback_exc.__class__.__name__})."
+            )
 
-    if generate_ai_summary and llm_provider == "lmstudio":
-        message += " AI summary improvement requested; local rule summaries were kept for v1 reliability."
+    if generate_ai_summary and llm_provider in {"lmstudio", "lm_studio"}:
+        message += " LM Studio summary enhancement is available through the configured local server; cluster labels remain deterministic in this run."
 
     with connect() as conn:
-        _store_embeddings(conn, reviews, model_name)
+        _store_embeddings(conn, reviews, model_name, embedding_rows)
         clusters_created, evidence_created = _store_analysis_outputs(conn, analysis_run_id, groups)
         _store_analysis_report(conn, analysis_run_id, app_id, reviews, clusters_created, clusterer)
 
@@ -150,24 +165,27 @@ async def model_settings_status() -> dict[str, Any]:
     lm_status = await _lm_studio_status()
     providers = [
         {
-            "id": "local_rules",
-            "label": "Local rules",
+            "id": "local_gpu",
+            "label": "Local GPU embeddings",
             "available": True,
             "default": True,
-            "notes": "Always available; no external model required.",
+            "notes": "Uses SentenceTransformers on CUDA when available; falls back to CPU/TF-IDF.",
+            "default_embedding_model": DEFAULT_SEMANTIC_EMBEDDING_MODEL,
         },
         {
             "id": "lmstudio",
             "label": "LM Studio",
             "available": lm_status["available"],
             "default": False,
-            "base_url": LM_STUDIO_BASE_URL,
+            "base_url": LM_STUDIO_NATIVE_BASE_URL,
+            "openai_base_url": LM_STUDIO_OPENAI_BASE_URL,
             "models": lm_status["models"],
+            "embedding_models": lm_status.get("embedding_models", []),
         },
     ]
     return {
-        "default_provider": "local_rules",
-        "default_embedding_model": DEFAULT_EMBEDDING_MODEL,
+        "default_provider": "local_gpu",
+        "default_embedding_model": DEFAULT_SEMANTIC_EMBEDDING_MODEL,
         "providers": providers,
         "lm_studio": lm_status,
     }
@@ -176,25 +194,48 @@ async def model_settings_status() -> dict[str, Any]:
 async def _lm_studio_status() -> dict[str, Any]:
     try:
         async with httpx.AsyncClient(timeout=1.5) as client:
-            response = await client.get(f"{LM_STUDIO_BASE_URL}/models")
+            response = await client.get(f"{LM_STUDIO_NATIVE_BASE_URL}/models")
             response.raise_for_status()
             payload = response.json()
     except Exception as exc:
+        try:
+            async with httpx.AsyncClient(timeout=1.5) as client:
+                response = await client.get(f"{LM_STUDIO_OPENAI_BASE_URL}/models")
+                response.raise_for_status()
+                payload = response.json()
+        except Exception as fallback_exc:
+            return {
+                "available": False,
+                "base_url": LM_STUDIO_NATIVE_BASE_URL,
+                "openai_base_url": LM_STUDIO_OPENAI_BASE_URL,
+                "models": [],
+                "embedding_models": [],
+                "default_model": None,
+                "message": f"{exc}; OpenAI-compatible fallback failed: {fallback_exc}",
+            }
+
+        models = [str(item.get("id")) for item in payload.get("data", []) if item.get("id")]
         return {
-            "available": False,
-            "base_url": LM_STUDIO_BASE_URL,
-            "models": [],
-            "default_model": None,
-            "message": str(exc),
+            "available": True,
+            "base_url": LM_STUDIO_OPENAI_BASE_URL,
+            "models": models,
+            "embedding_models": [model for model in models if "embed" in model.lower()],
+            "default_model": models[0] if models else None,
+            "message": "LM Studio OpenAI-compatible endpoint is reachable.",
         }
 
-    models = [str(item.get("id")) for item in payload.get("data", []) if item.get("id")]
+    rows = payload.get("models") or []
+    models = [str(item.get("key")) for item in rows if item.get("key")]
+    embedding_models = [str(item.get("key")) for item in rows if item.get("type") == "embedding" and item.get("key")]
+    llm_models = [str(item.get("key")) for item in rows if item.get("type") == "llm" and item.get("key")]
     return {
         "available": True,
-        "base_url": LM_STUDIO_BASE_URL,
+        "base_url": LM_STUDIO_NATIVE_BASE_URL,
+        "openai_base_url": LM_STUDIO_OPENAI_BASE_URL,
         "models": models,
-        "default_model": models[0] if models else None,
-        "message": "LM Studio OpenAI-compatible endpoint is reachable.",
+        "embedding_models": embedding_models,
+        "default_model": llm_models[0] if llm_models else models[0] if models else None,
+        "message": "LM Studio native v1 endpoint is reachable.",
     }
 
 
@@ -238,6 +279,63 @@ def _load_reviews(conn: duckdb.DuckDBPyConnection, app_id: str | None, scope: st
             params,
         )
     )
+
+
+def _cluster_with_semantic_embeddings(
+    reviews: list[dict[str, Any]],
+    model_name: str,
+    min_cluster_size: int,
+) -> tuple[list[dict[str, Any]], list[list[float]], str]:
+    if model_name == LOCAL_HASH_EMBEDDING_MODEL:
+        raise RuntimeError("local hash embeddings are only used as a storage fallback")
+
+    import numpy as np
+    import torch
+    from sentence_transformers import SentenceTransformer
+    from sklearn.cluster import MiniBatchKMeans
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = SentenceTransformer(model_name, device=device)
+    texts = [_embedding_text(model_name, str(row.get("review") or "")) for row in reviews]
+    batch_size = 96 if device == "cuda" else 24
+    embeddings = model.encode(
+        texts,
+        batch_size=batch_size,
+        show_progress_bar=False,
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+    )
+    embeddings = np.asarray(embeddings, dtype=np.float32)
+    cluster_count = max(1, min(40, len(reviews) // max(min_cluster_size, 1)))
+    if cluster_count == 1:
+        labels = np.zeros(len(reviews), dtype=np.int32)
+        scores = np.ones(len(reviews), dtype=np.float32)
+    else:
+        model_batch_size = max(1024, cluster_count * 96)
+        clusterer = MiniBatchKMeans(
+            n_clusters=cluster_count,
+            random_state=13,
+            batch_size=model_batch_size,
+            n_init=10,
+            reassignment_ratio=0.01,
+        )
+        labels = clusterer.fit_predict(embeddings)
+        centers = np.asarray(clusterer.cluster_centers_, dtype=np.float32)
+        norms = np.linalg.norm(centers, axis=1, keepdims=True)
+        centers = centers / np.maximum(norms, 1e-12)
+        scores = np.sum(embeddings * centers[labels], axis=1)
+
+    grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for row, label, score in zip(reviews, labels, scores, strict=True):
+        grouped[int(label)].append({"row": row, "score": max(0.0, min(float(score), 1.0))})
+    return [_describe_group(members) for members in grouped.values()], embeddings.tolist(), device
+
+
+def _embedding_text(model_name: str, text: str) -> str:
+    compact = re.sub(r"\s+", " ", text).strip()
+    if "e5" in model_name.lower() and not compact.lower().startswith(("query:", "passage:")):
+        return f"passage: {compact}"
+    return compact
 
 
 def _cluster_with_sklearn(reviews: list[dict[str, Any]], min_cluster_size: int) -> list[dict[str, Any]]:
@@ -305,17 +403,22 @@ def _describe_group(members: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _store_embeddings(conn: duckdb.DuckDBPyConnection, reviews: list[dict[str, Any]], model_name: str) -> None:
+def _store_embeddings(
+    conn: duckdb.DuckDBPyConnection,
+    reviews: list[dict[str, Any]],
+    model_name: str,
+    embeddings: list[list[float]] | None = None,
+) -> None:
     generated_at = utcnow()
     rows = []
-    for review in reviews:
-        embedding = _hash_embedding(str(review.get("review") or ""))
+    for index, review in enumerate(reviews):
+        embedding = embeddings[index] if embeddings is not None else _hash_embedding(str(review.get("review") or ""))
         rows.append(
             (
                 review["recommendation_id"],
                 model_name,
                 len(embedding),
-                json.dumps(embedding),
+                json.dumps([round(float(value), 6) for value in embedding]),
                 generated_at,
             )
         )

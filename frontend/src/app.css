@@ -84,7 +84,11 @@ select:focus-visible {
 .topic-item,
 .export-row,
 .language-row,
-.detail-head {
+.detail-head,
+.game-card,
+.selected-game-head,
+.game-action-row,
+.flow-step {
   display: flex;
   align-items: center;
 }
@@ -291,6 +295,14 @@ select:focus-visible {
   padding: 18px 24px 30px;
 }
 
+.content.library-content {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.content.wide-content {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .main {
   display: grid;
   gap: 16px;
@@ -326,7 +338,7 @@ select:focus-visible {
 
 .overview {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(360px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
@@ -471,10 +483,25 @@ h3 {
 .control-grid,
 .detail-grid,
 .settings-grid,
-.report-layout {
+.report-layout,
+.library-layout,
+.decision-strip {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
   gap: 16px;
+}
+
+.decision-strip {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.game-summary h1 {
+  font-size: clamp(22px, 2.4vw, 30px);
+}
+
+.analysis-method {
+  align-content: start;
 }
 
 .timeline,
@@ -484,8 +511,299 @@ h3 {
 .evidence,
 .report-doc,
 .export-stack,
-.connection-card {
+.connection-card,
+.game-browser,
+.selected-game {
   padding-bottom: 18px;
+}
+
+.library-layout {
+  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.1fr);
+}
+
+.library-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.library-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cluster-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.library-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 360px;
+  min-width: 220px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.library-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+}
+
+.library-filters,
+.row-actions,
+.modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.library-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.library-table {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.library-head,
+.library-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) 112px 112px 88px 128px 132px;
+  gap: 12px;
+  align-items: center;
+}
+
+.library-head {
+  min-height: 42px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--soft);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.library-rows {
+  max-height: calc(100svh - 330px);
+  min-height: 420px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.library-row {
+  min-height: 72px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.library-row.active,
+.library-row:hover {
+  background: var(--accent-soft);
+}
+
+.library-game {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.library-game span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.library-game strong,
+.library-game small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-game small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.score-cell {
+  display: grid;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-track {
+  overflow: hidden;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+
+.mini-track b {
+  display: block;
+  width: var(--score);
+  height: 100%;
+  background: var(--accent);
+}
+
+.compact {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.game-list,
+.selected-game-stack,
+.project-flow {
+  display: grid;
+  gap: 10px;
+}
+
+.game-list {
+  padding: 18px;
+}
+
+.game-card {
+  width: 100%;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: inherit;
+  text-align: left;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.game-card:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+  transform: translateY(-1px);
+}
+
+.game-card.active {
+  border-color: rgba(50, 211, 173, 0.55);
+  background: var(--accent-soft);
+}
+
+.game-cover {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 56px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(50, 211, 173, 0.24), transparent 52%),
+    var(--surface-3);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.game-cover.large {
+  width: 72px;
+  height: 92px;
+  font-size: 17px;
+}
+
+.game-card-body {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 5px;
+}
+
+.game-card-body small,
+.game-tags em,
+.selected-game p,
+.flow-step div span {
+  color: var(--muted);
+}
+
+.game-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.game-tags em {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.selected-game {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.selected-game-head {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.selected-game-head > div {
+  display: grid;
+  min-width: 0;
+  gap: 9px;
+}
+
+.game-action-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.project-flow {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.flow-step {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.flow-step div {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 3px;
 }
 
 .timeline-toolbar {
@@ -694,7 +1012,7 @@ h3 {
 
 .cluster-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 12px;
 }
 
@@ -813,6 +1131,58 @@ h3 {
   color: var(--muted);
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.44);
+}
+
+.modal-backdrop.align-right {
+  place-items: start end;
+  padding-top: 84px;
+}
+
+.modal-card {
+  display: grid;
+  gap: 16px;
+  width: min(680px, calc(100vw - 32px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 18px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.settings-drawer {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.modal-head p,
+.modal-actions span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.modal-note {
+  margin: 0 18px;
+}
+
+.modal-actions {
+  justify-content: space-between;
+}
+
 .inspector {
   min-width: 0;
 }
@@ -881,17 +1251,53 @@ svg {
   }
 
   .topbar,
+  .library-toolbar,
   .overview,
   .workspace-grid,
   .control-grid,
   .detail-grid,
   .settings-grid,
   .report-layout,
+  .decision-strip,
+  .library-layout,
   .metric-strip,
   .filters,
   .event-guide,
-  .cluster-grid {
+  .cluster-grid,
+  .project-flow {
     grid-template-columns: 1fr;
+  }
+
+  .library-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cluster-tools {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .library-head {
+    display: none;
+  }
+
+  .library-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    min-height: 92px;
+    padding: 12px 14px;
+  }
+
+  .library-row > span:nth-child(3),
+  .library-row > .score-cell,
+  .library-row > span:nth-child(5) {
+    display: none;
+  }
+
+  .row-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
   }
 
   .inspector-inner,

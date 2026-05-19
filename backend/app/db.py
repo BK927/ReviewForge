@@ -17,6 +17,18 @@ CREATE SEQUENCE IF NOT EXISTS report_id_seq START 1;
 CREATE SEQUENCE IF NOT EXISTS job_id_seq START 1;
 CREATE SEQUENCE IF NOT EXISTS analysis_run_id_seq START 1;
 
+CREATE TABLE IF NOT EXISTS games (
+    app_id VARCHAR PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    short_name VARCHAR,
+    note TEXT,
+    tags JSON,
+    status VARCHAR,
+    created_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
+    updated_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
+    last_refreshed_at TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS reviews (
     recommendation_id VARCHAR PRIMARY KEY,
     app_id VARCHAR NOT NULL,
@@ -38,6 +50,7 @@ CREATE TABLE IF NOT EXISTS reviews (
 
 CREATE TABLE IF NOT EXISTS events (
     id BIGINT PRIMARY KEY DEFAULT nextval('event_id_seq'),
+    app_id VARCHAR,
     title VARCHAR NOT NULL,
     event_type VARCHAR NOT NULL,
     description TEXT,
@@ -79,6 +92,7 @@ CREATE TABLE IF NOT EXISTS evidence (
 CREATE TABLE IF NOT EXISTS reports (
     id BIGINT PRIMARY KEY DEFAULT nextval('report_id_seq'),
     analysis_run_id BIGINT,
+    app_id VARCHAR,
     title VARCHAR NOT NULL,
     summary TEXT NOT NULL,
     filters JSON,
@@ -145,6 +159,8 @@ def initialize_database() -> None:
         run_migrations(conn)
         ensure_default_settings(conn)
         seed_if_empty(conn)
+        ensure_games_seeded(conn)
+        backfill_scoped_rows(conn)
 
 
 def utcnow() -> datetime:
@@ -152,9 +168,15 @@ def utcnow() -> datetime:
 
 
 def run_migrations(conn: duckdb.DuckDBPyConnection) -> None:
+    _add_column_if_missing(conn, "games", "short_name", "VARCHAR")
+    _add_column_if_missing(conn, "games", "note", "TEXT")
+    _add_column_if_missing(conn, "games", "tags", "JSON")
+    _add_column_if_missing(conn, "games", "status", "VARCHAR")
+    _add_column_if_missing(conn, "events", "app_id", "VARCHAR")
     _add_column_if_missing(conn, "clusters", "analysis_run_id", "BIGINT")
     _add_column_if_missing(conn, "evidence", "analysis_run_id", "BIGINT")
     _add_column_if_missing(conn, "reports", "analysis_run_id", "BIGINT")
+    _add_column_if_missing(conn, "reports", "app_id", "VARCHAR")
 
 
 def ensure_default_settings(conn: duckdb.DuckDBPyConnection) -> None:
@@ -172,7 +194,7 @@ def ensure_default_settings(conn: duckdb.DuckDBPyConnection) -> None:
             "models",
             {
                 "default_provider": "local_rules",
-                "embedding_model": "local-hash-v1",
+                "embedding_model": "intfloat/multilingual-e5-large",
                 "lm_studio_base_url": "http://127.0.0.1:1234/v1",
             },
         ),
@@ -192,6 +214,66 @@ def _add_column_if_missing(conn: duckdb.DuckDBPyConnection, table: str, column: 
     columns = {row[1] for row in conn.execute(f"PRAGMA table_info('{table}')").fetchall()}
     if column not in columns:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
+
+
+def _default_game_name(app_id: str) -> str:
+    if app_id == "1145350":
+        return "Hades II"
+    return f"Steam App {app_id}"
+
+
+def _primary_app_id(conn: duckdb.DuckDBPyConnection) -> str:
+    row = conn.execute(
+        """
+        SELECT app_id
+        FROM reviews
+        GROUP BY app_id
+        ORDER BY count(*) DESC, app_id
+        LIMIT 1
+        """
+    ).fetchone()
+    return str(row[0]) if row else get_settings().steam_app_id
+
+
+def ensure_games_seeded(conn: duckdb.DuckDBPyConnection) -> None:
+    app_ids = [str(row[0]) for row in conn.execute("SELECT DISTINCT app_id FROM reviews ORDER BY app_id").fetchall()]
+    if get_settings().steam_app_id not in app_ids:
+        app_ids.append(get_settings().steam_app_id)
+    now = utcnow()
+    for app_id in app_ids:
+        conn.execute(
+            """
+            INSERT INTO games (app_id, name, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (app_id) DO NOTHING
+            """,
+            [app_id, _default_game_name(app_id), now, now],
+        )
+    conn.execute(
+        "UPDATE games SET name = ? WHERE app_id = ? AND name = ?",
+        ["Hades II", "1145350", "Steam App 1145350"],
+    )
+
+
+def backfill_scoped_rows(conn: duckdb.DuckDBPyConnection) -> None:
+    app_id = _primary_app_id(conn)
+    conn.execute("UPDATE events SET app_id = ? WHERE app_id IS NULL", [app_id])
+    conn.execute("UPDATE analysis_runs SET app_id = ? WHERE app_id IS NULL", [app_id])
+    rows = conn.execute("SELECT id, filters FROM reports WHERE app_id IS NULL").fetchall()
+    for report_id, filters in rows:
+        report_app_id = _app_id_from_filters(filters) or app_id
+        conn.execute("UPDATE reports SET app_id = ? WHERE id = ?", [report_app_id, report_id])
+
+
+def _app_id_from_filters(filters: object) -> str | None:
+    if not filters:
+        return None
+    try:
+        value = filters if isinstance(filters, dict) else json.loads(str(filters))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    app_id = value.get("app_id") if isinstance(value, dict) else None
+    return str(app_id) if app_id else None
 
 
 def seed_if_empty(conn: duckdb.DuckDBPyConnection) -> None:
@@ -413,6 +495,6 @@ def seed_if_empty(conn: duckdb.DuckDBPyConnection) -> None:
         "INSERT INTO settings (key, value) VALUES (?, ?)",
         [
             ("steam", json.dumps({"app_id": "1145350", "language": "all", "review_type": "all", "purchase_type": "all"})),
-            ("analysis", json.dumps({"provider": "placeholder", "clusterer": "keyword_stub", "embedding_model": None})),
+            ("analysis", json.dumps({"provider": "local_gpu", "clusterer": "semantic_embeddings", "embedding_model": "intfloat/multilingual-e5-large"})),
         ],
     )

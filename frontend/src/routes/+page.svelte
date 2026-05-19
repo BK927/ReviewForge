@@ -15,6 +15,7 @@
     ImageDown,
     Info,
     Languages,
+    Library,
     LayoutDashboard,
     MessagesSquare,
     Network,
@@ -35,9 +36,10 @@
   import TopicPanel from '$lib/TopicPanel.svelte';
 
   const API_BASE = 'http://127.0.0.1:8000/api';
-  const APP_ID = '1145350';
+  const DEFAULT_APP_ID = '1145350';
 
   type TabId =
+    | 'library'
     | 'dashboard'
     | 'data'
     | 'patches'
@@ -50,6 +52,8 @@
 
   type Tone = 'good' | 'bad' | 'mixed';
   type ClusterId = string;
+  type LibraryFilter = 'all' | 'ready' | 'needs-analysis' | 'needs-sync' | 'watch';
+  type ClusterToneFilter = 'all' | 'bad' | 'mixed' | 'good';
 
   type ApiDashboard = {
     total_reviews: number;
@@ -127,6 +131,25 @@
     updated_at: string | null;
   };
 
+  type ApiGame = {
+    app_id: string;
+    name: string;
+    short_name?: string | null;
+    status?: string | null;
+    note?: string | null;
+    tags?: string[] | null;
+    review_count?: number;
+    language_count?: number;
+    positive_ratio?: number | null;
+    cluster_count?: number;
+    evidence_count?: number;
+    last_sync_at?: string | null;
+    last_refreshed_at?: string | null;
+    latest_review_at?: string | null;
+    last_analysis_at?: string | null;
+    next_action?: 'sync' | 'analyze' | 'open' | string;
+  };
+
   type ApiJob = {
     id: number;
     job_type: string;
@@ -149,12 +172,28 @@
   };
 
   type AnalysisRunResult = {
+    analysis_run?: ApiAnalysisRun;
     job?: ApiJob;
     job_id?: number;
     id?: number;
     status?: string;
     message?: string;
     progress?: number;
+    clusterer?: string;
+    reviews_analyzed?: number;
+    clusters_created?: number;
+    evidence_created?: number;
+  };
+
+  type ApiAnalysisRun = {
+    id: number;
+    app_id?: string | null;
+    status: string;
+    progress: number;
+    message?: string | null;
+    params: Record<string, unknown>;
+    started_at: string;
+    finished_at?: string | null;
   };
 
   type TimelineBucket = {
@@ -215,7 +254,28 @@
     tone: Tone;
   };
 
-  const tabs: Array<{ id: TabId; label: string; group: 'Project' | 'Analysis'; icon: typeof LayoutDashboard }> = [
+  type GameProject = {
+    id: string;
+    name: string;
+    appId: string;
+    shortName: string;
+    status: string;
+    statusTone: Tone;
+    reviewCount: number;
+    languages: number;
+    positiveRatio: number;
+    clusters: number;
+    evidenceItems: number;
+    lastSync: string | null;
+    lastAnalysis: string | null;
+    queue: string;
+    note: string;
+    tags: string[];
+    nextAction: 'sync' | 'analyze' | 'open';
+  };
+
+  const tabs: Array<{ id: TabId; label: string; group: 'Project' | 'Analysis'; icon: IconComponent }> = [
+    { id: 'library', label: '게임 라이브러리', group: 'Project', icon: Library },
     { id: 'dashboard', label: '대시보드', group: 'Project', icon: LayoutDashboard },
     { id: 'data', label: '데이터 갱신', group: 'Project', icon: Database },
     { id: 'patches', label: '비교 기준', group: 'Project', icon: GitCommitHorizontal },
@@ -237,6 +297,21 @@
     { label: '대표 리뷰 CSV', icon: Download },
     { label: '패치별 차트 PNG', icon: ImageDown },
     { label: '기획 우선순위 표', icon: FileText }
+  ];
+
+  const libraryFilterOptions: Array<{ id: LibraryFilter; label: string }> = [
+    { id: 'all', label: '전체' },
+    { id: 'ready', label: '분석 완료' },
+    { id: 'needs-analysis', label: '분석 대기' },
+    { id: 'needs-sync', label: '수집 필요' },
+    { id: 'watch', label: '관찰' }
+  ];
+
+  const clusterToneOptions: Array<{ id: ClusterToneFilter; label: string }> = [
+    { id: 'all', label: '전체' },
+    { id: 'bad', label: '불만' },
+    { id: 'mixed', label: '혼합' },
+    { id: 'good', label: '호평' }
   ];
 
   const emptyDashboard: ApiDashboard = {
@@ -335,13 +410,82 @@
     }
   ];
 
+  const sampleGameProjects: GameProject[] = [
+    {
+      id: '1145350',
+      name: 'Hades II',
+      appId: '1145350',
+      shortName: 'HII',
+      status: '분석 완료',
+      statusTone: 'good',
+      reviewCount: 48_219,
+      languages: 14,
+      positiveRatio: 0.73,
+      clusters: 31,
+      evidenceItems: 128,
+      lastSync: '2026-05-18T11:12:00Z',
+      lastAnalysis: '2026-05-19T05:24:37Z',
+      queue: '패치 1.2 이후 장기 플레이 불만 재확인',
+      note: '현재 목업의 실제 데이터 기준 게임입니다.',
+      tags: ['라이브 분석', '패치 추적', '주요 프로젝트'],
+      nextAction: 'open'
+    },
+    {
+      id: '730',
+      name: 'Counter-Strike 2',
+      appId: '730',
+      shortName: 'CS2',
+      status: '수집됨',
+      statusTone: 'mixed',
+      reviewCount: 5,
+      languages: 2,
+      positiveRatio: 0.6,
+      clusters: 0,
+      evidenceItems: 0,
+      lastSync: '2026-05-19T04:38:00Z',
+      lastAnalysis: null,
+      queue: '표본을 늘린 뒤 클러스터링 필요',
+      note: 'DB에는 들어갈 수 있지만 화면의 게임별 분리가 아직 필요합니다.',
+      tags: ['수집 테스트', '분석 대기'],
+      nextAction: 'analyze'
+    },
+    {
+      id: '2379780',
+      name: 'Balatro',
+      appId: '2379780',
+      shortName: 'BAL',
+      status: '등록 예정',
+      statusTone: 'mixed',
+      reviewCount: 0,
+      languages: 0,
+      positiveRatio: 0,
+      clusters: 0,
+      evidenceItems: 0,
+      lastSync: null,
+      lastAnalysis: null,
+      queue: 'Steam App ID 등록 후 첫 수집',
+      note: '여러 게임을 비교할 때 필요한 빈 프로젝트 상태입니다.',
+      tags: ['신규 후보', '비교군'],
+      nextAction: 'sync'
+    }
+  ];
+
+  const gameImplementationRows: string[][] = [
+    ['게임 목록', 'app_id, 이름, 별칭, 메모를 저장하는 games 테이블', '필수', 'good'],
+    ['현재 선택 게임', '모든 API 요청에 선택 app_id를 전달', '필수', 'good'],
+    ['대시보드 분리', '요약, 언어, 리포트도 app_id 필터 지원', '필수', 'mixed'],
+    ['비교 보기', '게임 간 추천율과 불만 토픽을 나란히 비교', '후순위', 'mixed']
+  ];
+
   const defaultModelOptions: ModelOption[] = [
     { icon: Server, name: 'LM Studio', detail: '/api/settings/models 응답 대기 중', state: '상태 미확인', tone: 'mixed' },
     { icon: Cloud, name: 'Claude', detail: '클라우드 리포트 생성 공급자', state: '미설정', tone: 'mixed' },
     { icon: CloudCog, name: 'OpenAI', detail: '요약, 분류, 임베딩 API 공급자', state: '미설정', tone: 'mixed' }
   ];
 
-  let activeTab: TabId = 'dashboard';
+  let gameProjects: GameProject[] = sampleGameProjects;
+  let activeTab: TabId = 'library';
+  let selectedGameId = gameProjects[0].id;
   let activeCluster: ClusterId = sampleClusters[0].id;
   let activeSegment = '추천율';
   let apiState: 'checking' | 'online' | 'partial' | 'offline' = 'checking';
@@ -363,6 +507,7 @@
   let selectedReviews: ReviewSample[] = [];
   let evidenceItems: ApiEvidence[] = [];
   let reports: ApiReport[] = [];
+  let analysisRuns: ApiAnalysisRun[] = [];
   let modelOptions: ModelOption[] = defaultModelOptions;
 
   let isRefreshing = false;
@@ -382,7 +527,7 @@
   let analysisJob: ApiJob | AnalysisRunResult | null = null;
   let analysisOptions = {
     scope: 'new' as 'all' | 'new',
-    embedding_model: 'multilingual-e5-small',
+    embedding_model: 'intfloat/multilingual-e5-large',
     min_cluster_size: 20,
     generate_ai_summary: true,
     llm_provider: 'lm_studio'
@@ -401,26 +546,57 @@
   let reportState = '대기 중';
   let refreshRunRows: RunStatusRow[] = [];
   let analysisPipelineRows: RunStatusRow[] = [];
+  let libraryQuery = '';
+  let libraryFilter: LibraryFilter = 'all';
+  let clusterQuery = '';
+  let clusterToneFilter: ClusterToneFilter = 'all';
+  let showGameDialog = false;
+  let showSettingsPanel = false;
+  let gameForm = {
+    app_id: '',
+    name: '',
+    short_name: '',
+    note: '',
+    tags: ''
+  };
+  let gameFormState = 'Steam App ID와 게임명을 입력하세요.';
 
+  $: clusterSourceText = clusterSourceLabel(clusterSource);
+  $: dataSourceText = dataSourceLabel(dataSource);
+  $: showInspector = activeTab === 'dashboard' || activeTab === 'report';
+  $: latestAnalysisRun = analysisRuns[0] ?? null;
+  $: analysisRunSummary = buildAnalysisRunSummary(latestAnalysisRun);
+  $: analysisRunRows = buildAnalysisRunRows(analysisRuns);
   $: positiveRatio = Math.round(safeRatio(dashboard.positive_ratio) * 100);
   $: projectReviewCount = formatCount(dashboard.total_reviews);
   $: projectLanguageCount = formatCount(dashboard.languages);
   $: selectedCluster = clusters.find((cluster) => cluster.id === activeCluster) ?? clusters[0] ?? null;
   $: latestReport = reports[0] ?? null;
-  $: kpis = buildKpis(dashboard);
-  $: metrics = buildDataMetrics(dashboard, refreshJob);
+  $: kpis = buildKpis(dashboard, clusterSourceText);
+  $: metrics = buildDataMetrics(dashboard, refreshJob, dataSourceText);
   $: chartRows = buildChartRows(timelineRows, dashboard);
   $: negativeTopics = buildTopicRows('bad');
   $: positiveTopics = buildTopicRows('good');
-  $: languageMetrics = buildLanguageMetrics(languages);
+  $: languageMetrics = buildLanguageMetrics(languages, dataSourceText);
   $: languageRows = buildLanguageRows(languages);
   $: evidenceClaims = buildEvidenceClaims(evidenceItems);
   $: evidenceTableRows = buildEvidenceTableRows(evidenceItems);
   $: reportBlocks = buildReportBlocks(latestReport, dashboard, clusters, evidenceItems);
-  $: analysisMetrics = buildAnalysisMetrics(dashboard, clusters, evidenceItems, reports, analysisJob);
-  $: inspectorRows = buildInspectorRows();
+  $: analysisMetrics = buildAnalysisMetrics(dashboard, clusters, evidenceItems, reports, analysisJob, clusterSourceText);
+  $: inspectorRows = buildInspectorRows(dashboard, evidenceItems.length);
   $: priorityItems = buildPriorityItems();
   $: aiBrief = buildAiBrief(latestReport, clusters, dashboard);
+  $: selectedGame = gameProjects.find((game) => game.id === selectedGameId) ?? gameProjects[0] ?? sampleGameProjects[0];
+  $: selectedAppId = selectedGame?.appId ?? DEFAULT_APP_ID;
+  $: libraryMetrics = buildLibraryMetrics(gameProjects);
+  $: selectedGameFacts = buildSelectedGameFacts(selectedGame);
+  $: selectedGameSteps = buildSelectedGameSteps(selectedGame);
+  $: gameComparisonRows = buildGameComparisonRows(gameProjects);
+  $: filteredLibraryGames = filterLibraryGames(gameProjects, libraryQuery, libraryFilter);
+  $: filteredClusters = filterClusters(clusters, clusterQuery, clusterToneFilter);
+  $: clusterMetrics = buildClusterMetrics(clusters, clusterSourceText);
+  $: clusterFocusRows = buildClusterFocusRows(clusters);
+  $: roleReadinessRows = buildRoleReadinessRows(dashboard, clusters, evidenceItems, languages, analysisRuns, events, reports);
   $: refreshRunRows = [
     {
       icon: DownloadCloud,
@@ -493,7 +669,7 @@
     }
   }
 
-  async function loadApiData() {
+  async function loadApiData(appIdOverride?: string) {
     isLoading = true;
     const warnings: string[] = [];
     async function get<T>(path: string, label: string): Promise<T | null> {
@@ -505,6 +681,24 @@
       }
     }
 
+    const gamesResult = await get<ApiGame[]>('/games', '게임');
+    if (Array.isArray(gamesResult) && gamesResult.length > 0) {
+      gameProjects = gamesResult.map(mapApiGame);
+      if (!gameProjects.some((game) => game.id === selectedGameId)) {
+        selectedGameId = gameProjects[0].id;
+      }
+    } else if (gameProjects.length === 0) {
+      gameProjects = sampleGameProjects;
+      selectedGameId = sampleGameProjects[0].id;
+    }
+
+    const activeAppId =
+      appIdOverride ??
+      gameProjects.find((game) => game.id === selectedGameId)?.appId ??
+      gameProjects[0]?.appId ??
+      DEFAULT_APP_ID;
+    const appQuery = `app_id=${encodeURIComponent(activeAppId)}`;
+
     const [
       dashboardResult,
       languagesResult,
@@ -513,15 +707,17 @@
       clustersResult,
       evidenceResult,
       reportsResult,
+      analysisRunsResult,
       modelsResult
     ] = await Promise.all([
-      get<ApiDashboard>('/dashboard', '대시보드'),
-      get<ApiLanguage[]>('/languages', '언어'),
-      get<ApiEvent[]>('/events', '이벤트'),
-      get<unknown>(`/timeline?app_id=${APP_ID}&bucket=month`, '타임라인'),
-      get<ApiCluster[]>('/clusters', '클러스터'),
-      get<ApiEvidence[]>('/evidence', '근거'),
-      get<ApiReport[]>('/reports', '리포트'),
+      get<ApiDashboard>(`/dashboard?${appQuery}`, '대시보드'),
+      get<ApiLanguage[]>(`/languages?${appQuery}`, '언어'),
+      get<ApiEvent[]>(`/events?${appQuery}`, '이벤트'),
+      get<unknown>(`/timeline?${appQuery}&bucket=month`, '타임라인'),
+      get<ApiCluster[]>(`/clusters?${appQuery}`, '클러스터'),
+      get<ApiEvidence[]>(`/evidence?${appQuery}`, '근거'),
+      get<ApiReport[]>(`/reports?${appQuery}`, '리포트'),
+      get<ApiAnalysisRun[]>(`/analysis-runs?${appQuery}`, '분석 이력'),
       loadModelOptions(warnings)
     ]);
 
@@ -531,6 +727,7 @@
     timelineRows = normalizeTimeline(timelineResult);
     evidenceItems = Array.isArray(evidenceResult) ? evidenceResult : [];
     reports = Array.isArray(reportsResult) ? reportsResult : [];
+    analysisRuns = Array.isArray(analysisRunsResult) ? analysisRunsResult : [];
     modelOptions = modelsResult;
 
     if (Array.isArray(clustersResult) && clustersResult.length > 0) {
@@ -584,6 +781,8 @@
     apiMessage = message;
     dataSource = 'sample';
     endpointWarnings = ['백엔드 API'];
+    gameProjects = sampleGameProjects;
+    selectedGameId = sampleGameProjects[0].id;
     dashboard = sampleDashboard;
     timelineRows = sampleTimeline;
     languages = sampleLanguages;
@@ -606,6 +805,7 @@
       }))
     );
     reports = [];
+    analysisRuns = [];
     modelOptions = defaultModelOptions;
     refreshState = '백엔드 미연결';
     analysisState = '백엔드 미연결';
@@ -613,13 +813,13 @@
     isLoading = false;
   }
 
-  async function refreshSteamReviews() {
+  async function refreshSteamReviews(appId = selectedAppId) {
     isRefreshing = true;
     refreshState = '리뷰 갱신 요청 중';
     refreshJob = null;
     try {
       const payload = {
-        app_id: APP_ID,
+        app_id: appId,
         max_reviews: Number(refreshOptions.max_reviews),
         language: refreshOptions.language,
         review_type: refreshOptions.review_type,
@@ -644,7 +844,7 @@
       const updated = result.updated_reviews ?? numberFromMetadata(refreshJob, 'updated');
       const source = result.source ?? String(refreshJob?.metadata?.source ?? (refreshOptions.use_live_steam ? 'steam' : 'sample'));
       refreshState = `${formatCount(inserted)}개 추가 · ${formatCount(updated)}개 갱신 · ${sourceLabel(source)}`;
-      await loadApiData();
+      await loadApiData(appId);
     } catch {
       refreshState = '/api/refresh-steam 요청에 실패했습니다.';
       apiState = apiState === 'online' ? 'partial' : apiState;
@@ -654,7 +854,7 @@
     }
   }
 
-  async function startAnalysisRun() {
+  async function startAnalysisRun(appId = selectedAppId) {
     isAnalyzing = true;
     analysisState = '분석 실행 요청 중';
     analysisJob = null;
@@ -663,7 +863,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          app_id: APP_ID,
+          app_id: appId,
           scope: analysisOptions.scope,
           embedding_model: analysisOptions.embedding_model,
           min_cluster_size: Number(analysisOptions.min_cluster_size),
@@ -683,7 +883,7 @@
       } else {
         analysisState = result.message ?? statusLabel(result.status ?? 'submitted');
       }
-      await loadApiData();
+      await loadApiData(appId);
     } catch {
       analysisState = '/api/analysis-runs가 아직 응답하지 않습니다. 현재 화면은 기존 클러스터와 근거를 표시합니다.';
     } finally {
@@ -721,7 +921,7 @@
     eventImpactState = '전후 변화 계산 중';
     try {
       const payload = await requestJson<unknown>(
-        `/events/${selectedEventId}/impact?window_days=${impactWindowDays}&app_id=${APP_ID}`
+        `/events/${selectedEventId}/impact?window_days=${impactWindowDays}&app_id=${encodeURIComponent(selectedAppId)}`
       );
       eventImpact = normalizeEventImpact(payload);
       eventImpactState = eventImpact ? '전후 비교 결과' : '비교 결과가 없습니다.';
@@ -746,7 +946,8 @@
           title: newEvent.title.trim(),
           event_type: newEvent.event_type,
           description: newEvent.description.trim() || null,
-          occurred_at: new Date(newEvent.occurred_at).toISOString()
+          occurred_at: new Date(newEvent.occurred_at).toISOString(),
+          app_id: selectedAppId
         })
       });
       newEvent = { title: '', event_type: 'patch', occurred_at: localDateTimeValue(), description: '' };
@@ -771,7 +972,7 @@
           title: `ReviewForge summary ${new Date().toISOString().slice(0, 10)}`,
           summary: buildGeneratedSummary(dashboard, clusters, evidenceItems),
           filters: {
-            app_id: APP_ID,
+            app_id: selectedAppId,
             source: dataSource,
             cluster_count: clusters.length,
             evidence_count: evidenceItems.length
@@ -819,6 +1020,179 @@
   function setTab(tab: TabId) {
     activeTab = tab;
     window.scrollTo({ top: 0, behavior: 'auto' });
+  }
+
+  function mapApiGame(game: ApiGame): GameProject {
+    const reviewCount = numberFrom(game.review_count);
+    const clusterCount = numberFrom(game.cluster_count);
+    const statusKey = String(game.status ?? '').toLowerCase();
+    const nextAction = (game.next_action as GameProject['nextAction']) ?? inferNextAction(reviewCount, clusterCount);
+    const status = game.status ? gameStatusLabel(game.status) : gameStatusFromAction(nextAction);
+    return {
+      id: game.app_id,
+      name: game.name || `Steam app/${game.app_id}`,
+      appId: game.app_id,
+      shortName: game.short_name || shortNameFor(game.name || game.app_id),
+      status,
+      statusTone: statusToneFor(statusKey, nextAction),
+      reviewCount,
+      languages: numberFrom(game.language_count),
+      positiveRatio: ratioMaybe(game.positive_ratio) ?? 0,
+      clusters: clusterCount,
+      evidenceItems: numberFrom(game.evidence_count),
+      lastSync: game.last_sync_at ?? game.last_refreshed_at ?? game.latest_review_at ?? null,
+      lastAnalysis: game.last_analysis_at ?? null,
+      queue: nextActionLabel(nextAction),
+      note: game.note || `${game.name || game.app_id}의 Steam 리뷰를 게임별로 분리해 관리합니다.`,
+      tags: Array.isArray(game.tags) && game.tags.length ? game.tags : defaultGameTags(nextAction),
+      nextAction
+    };
+  }
+
+  function filterLibraryGames(projects: GameProject[], queryValue: string, filterValue: string) {
+    const q = queryValue.trim().toLowerCase();
+    return projects.filter((game) => {
+      const text = `${game.name} ${game.appId} ${game.status} ${game.tags.join(' ')}`.toLowerCase();
+      const statusMatch =
+        filterValue === 'all' ||
+        (filterValue === 'ready' && game.nextAction === 'open') ||
+        (filterValue === 'needs-analysis' && game.nextAction === 'analyze') ||
+        (filterValue === 'needs-sync' && game.nextAction === 'sync') ||
+        (filterValue === 'watch' && game.status.includes('관찰'));
+      return statusMatch && (!q || text.includes(q));
+    });
+  }
+
+  function filterClusters(clusterItems: ClusterView[], queryValue: string, toneFilter: ClusterToneFilter) {
+    const q = queryValue.trim().toLowerCase();
+    return clusterItems
+      .filter((cluster) => {
+        const text = `${cluster.title} ${cluster.description} ${cluster.tags.join(' ')}`.toLowerCase();
+        const toneMatch = toneFilter === 'all' || cluster.tone === toneFilter;
+        return toneMatch && (!q || text.includes(q));
+      })
+      .sort((a, b) => clusterPriorityScore(b) - clusterPriorityScore(a));
+  }
+
+  function clusterPriorityScore(cluster: ClusterView) {
+    const toneWeight = cluster.tone === 'bad' ? 3 : cluster.tone === 'mixed' ? 2 : 1;
+    return toneWeight * 1_000_000 + cluster.countValue;
+  }
+
+  async function runGameAction(game: GameProject) {
+    selectedGameId = game.id;
+    if (game.nextAction === 'sync') {
+      await refreshSteamReviews(game.appId);
+      return;
+    }
+    if (game.nextAction === 'analyze') {
+      await startAnalysisRun(game.appId);
+      return;
+    }
+    await loadApiData(game.appId);
+    setTab('dashboard');
+  }
+
+  async function openGame(game: GameProject) {
+    selectedGameId = game.id;
+    await loadApiData(game.appId);
+    setTab('dashboard');
+  }
+
+  async function createGame() {
+    const appId = gameForm.app_id.trim();
+    const name = gameForm.name.trim();
+    if (!appId || !name) {
+      gameFormState = 'Steam App ID와 게임명을 모두 입력하세요.';
+      return;
+    }
+    gameFormState = '게임 저장 중';
+    try {
+      const created = await requestJson<ApiGame>('/games', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          app_id: appId,
+          name,
+          short_name: gameForm.short_name.trim() || null,
+          note: gameForm.note.trim() || null,
+          tags: gameForm.tags
+            .split(',')
+            .map((tag) => tag.trim())
+            .filter(Boolean)
+        })
+      });
+      const mapped = mapApiGame(created);
+      selectedGameId = mapped.id;
+      resetGameForm();
+      showGameDialog = false;
+      await loadApiData(mapped.appId);
+      activeTab = 'library';
+    } catch {
+      gameFormState = '/api/games 저장에 실패했습니다. App ID가 이미 등록됐는지 확인하세요.';
+    }
+  }
+
+  function resetGameForm() {
+    gameForm = { app_id: '', name: '', short_name: '', note: '', tags: '' };
+    gameFormState = 'Steam App ID와 게임명을 입력하세요.';
+  }
+
+  function inferNextAction(reviewCount: number, clusterCount: number): GameProject['nextAction'] {
+    if (reviewCount <= 0) return 'sync';
+    if (clusterCount <= 0) return 'analyze';
+    return 'open';
+  }
+
+  function gameStatusFromAction(action: GameProject['nextAction']) {
+    if (action === 'sync') return '수집 필요';
+    if (action === 'analyze') return '분석 대기';
+    return '분석 완료';
+  }
+
+  function gameStatusLabel(value: string) {
+    const normalized = value.toLowerCase();
+    if (['ready', 'analyzed', 'complete', 'completed'].includes(normalized)) return '분석 완료';
+    if (['needs_sync', 'sync', 'new'].includes(normalized)) return '수집 필요';
+    if (['needs_analysis', 'collected'].includes(normalized)) return '분석 대기';
+    if (['running', 'queued'].includes(normalized)) return '작업 중';
+    if (['watch'].includes(normalized)) return '관찰 대상';
+    return value;
+  }
+
+  function statusToneFor(statusKey: string, action: GameProject['nextAction']): Tone {
+    if (statusKey.includes('watch') || statusKey.includes('running') || action === 'analyze') return 'mixed';
+    if (action === 'sync') return 'bad';
+    return 'good';
+  }
+
+  function nextActionLabel(action: GameProject['nextAction']) {
+    if (action === 'sync') return 'Steam 리뷰를 먼저 수집하세요.';
+    if (action === 'analyze') return '수집된 리뷰를 클러스터링하세요.';
+    return '대시보드에서 최신 반응을 검토하세요.';
+  }
+
+  function actionButtonLabel(action: GameProject['nextAction']) {
+    if (action === 'sync') return '리뷰 수집';
+    if (action === 'analyze') return '분석 실행';
+    return '열기';
+  }
+
+  function defaultGameTags(action: GameProject['nextAction']) {
+    if (action === 'sync') return ['신규', '수집 필요'];
+    if (action === 'analyze') return ['분석 대기'];
+    return ['분석 완료'];
+  }
+
+  function shortNameFor(value: string) {
+    const compact = value
+      .split(/[\s:_-]+/)
+      .filter(Boolean)
+      .map((part) => part[0])
+      .join('')
+      .slice(0, 3)
+      .toUpperCase();
+    return compact || value.slice(0, 3).toUpperCase();
   }
 
   function mapApiCluster(cluster: ApiCluster): ClusterView {
@@ -945,19 +1319,152 @@
     return merged.length > 0 ? merged : defaultModelOptions;
   }
 
-  function buildKpis(summary: ApiDashboard): string[][] {
+  function buildKpis(summary: ApiDashboard, sourceLabel: string): string[][] {
     return [
       ['수집 리뷰', formatCount(summary.total_reviews), latestLabel(summary.latest_review_at)],
       ['추천 리뷰', formatCount(summary.positive_reviews), `${formatPercent(summary.positive_ratio)} 추천`],
-      ['대표 클러스터', formatCount(summary.clusters), clusterSourceLabel()],
-      ['근거 리뷰', formatCount(summary.evidence_items), evidenceItems.length ? 'API 근거 표시' : '근거 대기']
+      ['대표 클러스터', formatCount(summary.clusters), sourceLabel],
+      ['근거 리뷰', formatCount(summary.evidence_items), summary.evidence_items ? 'API 근거 표시' : '근거 대기']
     ];
   }
 
-  function buildDataMetrics(summary: ApiDashboard, job: ApiJob | null): string[][] {
+  function buildLibraryMetrics(projects: GameProject[]): string[][] {
+    const reviewTotal = projects.reduce((total, game) => total + game.reviewCount, 0);
+    const analyzed = projects.filter((game) => game.lastAnalysis).length;
+    const waiting = projects.filter((game) => !game.lastAnalysis).length;
+    const latest = projects
+      .map((game) => game.lastSync)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1);
     return [
-      ['마지막 갱신', latestLabel(summary.latest_review_at), `Steam app/${APP_ID}`],
-      ['원본 리뷰', formatCount(summary.total_reviews), dataSourceLabel()],
+      ['관리 게임', formatCount(projects.length), '로컬 라이브러리'],
+      ['저장 리뷰', formatCount(reviewTotal), '게임별 app_id 기준'],
+      ['분석 완료', formatCount(analyzed), `${formatCount(waiting)}개 대기`],
+      ['최근 수집', latestLabel(latest ?? null), 'Steam 리뷰 기준']
+    ];
+  }
+
+  function buildSelectedGameFacts(game: GameProject): string[][] {
+    return [
+      ['Steam App ID', game.appId, '수집 키'],
+      ['리뷰 수', formatCount(game.reviewCount), game.lastSync ? latestLabel(game.lastSync) : '수집 전'],
+      ['추천율', formatPercent(game.positiveRatio), `${formatCount(game.languages)}개 언어`],
+      ['분석 상태', game.status, game.lastAnalysis ? latestLabel(game.lastAnalysis) : '분석 전']
+    ];
+  }
+
+  function buildSelectedGameSteps(game: GameProject): string[][] {
+    return [
+      ['1', '게임 등록', `Steam app/${game.appId} · ${game.name}`, 'good'],
+      ['2', '리뷰 수집', game.lastSync ? latestLabel(game.lastSync) : '아직 수집하지 않음', game.lastSync ? 'good' : 'mixed'],
+      ['3', '분석 실행', game.lastAnalysis ? latestLabel(game.lastAnalysis) : '클러스터링 대기', game.lastAnalysis ? 'good' : 'mixed'],
+      ['4', '기획 큐', game.queue, game.statusTone]
+    ];
+  }
+
+  function buildGameComparisonRows(projects: GameProject[]): string[][] {
+    return projects.map((game) => [
+      `${game.name} · app/${game.appId}`,
+      formatCount(game.reviewCount),
+      game.reviewCount ? formatPercent(game.positiveRatio) : '수집 전',
+      game.status
+    ]);
+  }
+
+  function buildClusterMetrics(clusterItems: ClusterView[], sourceLabel: string): string[][] {
+    const risky = clusterItems.filter((cluster) => cluster.tone !== 'good');
+    const largestRisk = [...risky].sort((a, b) => b.countValue - a.countValue)[0];
+    const largest = [...clusterItems].sort((a, b) => b.countValue - a.countValue)[0];
+    return [
+      ['전체 묶음', formatCount(clusterItems.length), sourceLabel],
+      ['먼저 볼 묶음', formatCount(risky.length), '불만/혼합 기준'],
+      ['최대 불만', largestRisk ? largestRisk.title : '없음', largestRisk ? `${largestRisk.count}개` : '현재 없음'],
+      ['최대 묶음', largest ? largest.title : '없음', largest ? `${largest.count}개` : '분석 대기']
+    ];
+  }
+
+  function buildClusterFocusRows(clusterItems: ClusterView[]): string[][] {
+    const rows = clusterItems
+      .filter((cluster) => cluster.tone !== 'good')
+      .sort((a, b) => clusterPriorityScore(b) - clusterPriorityScore(a))
+      .slice(0, 4)
+      .map((cluster) => [
+        cluster.title,
+        `${cluster.count}개 리뷰 · ${cluster.tags.slice(0, 2).join(' · ')}`,
+        cluster.tone === 'bad' ? '우선' : '관찰',
+        cluster.tone
+      ]);
+    return rows.length ? rows : [['불만 신호 부족', '현재 분석에서는 호평 클러스터가 대부분입니다. 비추천 필터로 재수집하거나 기간을 좁혀 보세요.', '관찰', 'mixed']];
+  }
+
+  function buildRoleReadinessRows(
+    summary: ApiDashboard,
+    clusterItems: ClusterView[],
+    evidence: ApiEvidence[],
+    languageItems: ApiLanguage[],
+    runs: ApiAnalysisRun[],
+    eventItems: ApiEvent[],
+    reportItems: ApiReport[]
+  ): string[][] {
+    const latestRun = runs[0] ?? null;
+    const riskyClusters = clusterItems.filter((cluster) => cluster.tone !== 'good').length;
+    return [
+      [
+        '데이터 사이언티스트',
+        `${formatCount(summary.total_reviews)}개 리뷰, ${formatCount(languageItems.length || summary.languages)}개 언어, ${latestRun ? analysisMethodLabel(latestRun) : '분석 이력 없음'}`,
+        summary.total_reviews >= 1000 && latestRun ? '사용 가능' : '보강',
+        summary.total_reviews >= 1000 && latestRun ? 'good' : 'mixed'
+      ],
+      [
+        '기획자',
+        `${formatCount(riskyClusters)}개 불만/혼합 묶음과 ${formatCount(evidence.length)}개 원문 근거로 우선순위를 볼 수 있습니다.`,
+        riskyClusters && evidence.length ? '사용 가능' : '보강',
+        riskyClusters && evidence.length ? 'good' : 'mixed'
+      ],
+      [
+        '마케터',
+        `${formatCount(reportItems.length)}개 리포트와 언어권 강점은 있지만, 바로 쓸 캠페인 문구/인용문 선별은 아직 수동 확인이 필요합니다.`,
+        reportItems.length ? '부분 가능' : '보강',
+        reportItems.length ? 'mixed' : 'bad'
+      ],
+      [
+        '운영/PM',
+        `${formatCount(eventItems.length)}개 이벤트 기준이 저장되어 있습니다. 패치/세일 날짜가 있어야 전후 반응을 읽을 수 있습니다.`,
+        eventItems.length ? '사용 가능' : '보강',
+        eventItems.length ? 'good' : 'mixed'
+      ]
+    ];
+  }
+
+  function buildAnalysisRunRows(runs: ApiAnalysisRun[]): string[][] {
+    return runs.slice(0, 5).map((run) => [
+      `#${run.id}`,
+      statusLabel(run.status),
+      analysisMethodLabel(run),
+      run.finished_at ? formatDateTime(run.finished_at) : latestLabel(run.started_at)
+    ]);
+  }
+
+  function buildAnalysisRunSummary(run: ApiAnalysisRun | null) {
+    if (!run) return '분석 이력이 아직 없습니다. 리뷰 수집 후 분석 실행을 시작하세요.';
+    const params = run.params ?? {};
+    const model = String(params.embedding_model ?? analysisOptions.embedding_model ?? '기본 임베딩');
+    const scope = String(params.scope ?? 'all') === 'new' ? '새 리뷰' : '전체 리뷰';
+    return `${statusLabel(run.status)} · ${scope} · ${model} · ${formatDateTime(run.finished_at ?? run.started_at)}`;
+  }
+
+  function analysisMethodLabel(run: ApiAnalysisRun) {
+    const params = run.params ?? {};
+    const model = String(params.embedding_model ?? '기본 임베딩');
+    const minSize = numberFrom(params.min_cluster_size);
+    return `${model}${minSize ? ` · 최소 ${formatCount(minSize)}개` : ''}`;
+  }
+
+  function buildDataMetrics(summary: ApiDashboard, job: ApiJob | null, sourceLabel: string): string[][] {
+    return [
+      ['마지막 갱신', latestLabel(summary.latest_review_at), `Steam app/${selectedAppId}`],
+      ['원본 리뷰', formatCount(summary.total_reviews), sourceLabel],
       ['최근 작업', job ? statusLabel(job.status) : '없음', job?.message ?? refreshState],
       ['수집 모드', refreshOptions.use_live_steam ? 'Live Steam' : 'Sample', refreshOptions.sample_mode ? '샘플 허용' : '샘플 끔']
     ];
@@ -968,13 +1475,14 @@
     clusterItems: ClusterView[],
     evidence: ApiEvidence[],
     reportItems: ApiReport[],
-    job: ApiJob | AnalysisRunResult | null
+    job: ApiJob | AnalysisRunResult | null,
+    sourceLabel: string
   ): string[][] {
     const status = job && 'status' in job && job.status ? statusLabel(job.status) : analysisState;
     const progress = job && 'progress' in job && typeof job.progress === 'number' ? formatPercent(job.progress) : '대기';
     return [
       ['분석 대상', formatCount(summary.total_reviews), analysisOptions.scope === 'all' ? '전체 리뷰' : '새 리뷰'],
-      ['클러스터', formatCount(clusterItems.length), clusterSourceLabel()],
+      ['클러스터', formatCount(clusterItems.length), sourceLabel],
       ['근거', formatCount(evidence.length), '리포트 검증용'],
       ['작업 상태', progress, status || '대기 중']
     ];
@@ -1021,12 +1529,12 @@
     return [['데이터 대기', '클러스터 API 결과가 들어오면 표시됩니다.', '대기', 'flat']];
   }
 
-  function buildLanguageMetrics(languageItems: ApiLanguage[]): string[][] {
+  function buildLanguageMetrics(languageItems: ApiLanguage[], sourceLabel: string): string[][] {
     const enough = languageItems.filter((item) => item.review_count >= 1000).length;
     const top = languageItems[0];
     const weakest = [...languageItems].sort((a, b) => a.positive_ratio - b.positive_ratio)[0];
     return [
-      ['언어 수', formatCount(languageItems.length || dashboard.languages), dataSourceLabel()],
+      ['언어 수', formatCount(languageItems.length || dashboard.languages), sourceLabel],
       ['최대 표본', top ? steamLanguageLabel(top.language) : '없음', top ? `${formatCount(top.review_count)}개` : '언어 API 대기'],
       ['검토 언어', weakest ? steamLanguageLabel(weakest.language) : '없음', weakest ? `${formatPercent(weakest.positive_ratio)} 추천` : '데이터 없음'],
       ['표본 충분', `${formatCount(enough)}개`, '1,000개 이상 기준']
@@ -1044,7 +1552,7 @@
 
   function buildEvidenceClaims(items: ApiEvidence[]): string[][] {
     const rows = items.slice(0, 4).map((item) => [
-      item.note || clusterTitle(item.cluster_id) || '근거 문장',
+      evidenceClaimTitle(item),
       item.quote,
       evidenceTypeLabel(item.evidence_type),
       item.evidence_type === 'ai' ? 'ai' : 'numeric'
@@ -1088,18 +1596,22 @@
   function buildGeneratedSummary(summary: ApiDashboard, clusterItems: ClusterView[], evidence: ApiEvidence[]) {
     const topBad = clusterItems.find((cluster) => cluster.tone === 'bad');
     const topGood = clusterItems.find((cluster) => cluster.tone === 'good');
+    const conflictText =
+      topGood && topBad && topGood.title === topBad.title
+        ? `강점과 검토 신호가 모두 "${topGood.title}"에 모여 있어 세부 원문 확인이 필요합니다. `
+        : `${topGood ? `강점 신호는 "${topGood.title}"이고, ` : ''}${
+            topBad ? `검토 신호는 "${topBad.title}"입니다. ` : '검토 클러스터는 아직 충분하지 않습니다. '
+          }`;
     return `현재 ${formatCount(summary.total_reviews)}개 리뷰 기준 추천율은 ${formatPercent(summary.positive_ratio)}입니다. ${
-      topGood ? `강점 신호는 "${topGood.title}"이고, ` : ''
-    }${topBad ? `검토 신호는 "${topBad.title}"입니다. ` : '검토 클러스터는 아직 충분하지 않습니다. '}${
-      evidence.length ? `근거 ${formatCount(evidence.length)}개가 연결되어 있습니다.` : '근거 API 데이터는 아직 없습니다.'
-    }`;
+      conflictText
+    }${evidence.length ? `근거 ${formatCount(evidence.length)}개가 연결되어 있습니다.` : '근거 API 데이터는 아직 없습니다.'}`;
   }
 
-  function buildInspectorRows(): string[][] {
+  function buildInspectorRows(summary: ApiDashboard, evidenceCount: number): string[][] {
     return [
-      ['데이터 최신성', latestLabel(dashboard.latest_review_at), dashboard.latest_review_at ? '확인' : '대기', dashboard.latest_review_at ? 'good' : 'mixed'],
-      ['표본 크기', `${formatCount(dashboard.total_reviews)}개 리뷰`, dashboard.total_reviews > 0 ? '사용 가능' : '대기', dashboard.total_reviews > 0 ? 'good' : 'mixed'],
-      ['AI 문장 검증', `${formatCount(evidenceItems.length)}개 근거`, evidenceItems.length ? '진행' : '대기', evidenceItems.length ? 'good' : 'mixed']
+      ['데이터 최신성', latestLabel(summary.latest_review_at), summary.latest_review_at ? '확인' : '대기', summary.latest_review_at ? 'good' : 'mixed'],
+      ['표본 크기', `${formatCount(summary.total_reviews)}개 리뷰`, summary.total_reviews > 0 ? '사용 가능' : '대기', summary.total_reviews > 0 ? 'good' : 'mixed'],
+      ['근거 검증', `${formatCount(evidenceCount)}개 근거`, evidenceCount ? '진행' : '대기', evidenceCount ? 'good' : 'mixed']
     ];
   }
 
@@ -1138,15 +1650,15 @@
     return clusters.find((cluster) => cluster.id === String(clusterId))?.title ?? `Cluster ${clusterId}`;
   }
 
-  function clusterSourceLabel() {
-    if (clusterSource === 'backend') return '백엔드 클러스터';
-    if (clusterSource === 'sample') return '샘플 클러스터';
+  function clusterSourceLabel(source: typeof clusterSource) {
+    if (source === 'backend') return '백엔드 클러스터';
+    if (source === 'sample') return '샘플 클러스터';
     return '클러스터 없음';
   }
 
-  function dataSourceLabel() {
-    if (dataSource === 'api') return '백엔드 API';
-    if (dataSource === 'sample') return '샘플 표시';
+  function dataSourceLabel(source: typeof dataSource) {
+    if (source === 'api') return '백엔드 API';
+    if (source === 'sample') return '샘플 표시';
     return '데이터 대기';
   }
 
@@ -1174,7 +1686,17 @@
     if (value === 'placeholder') return '자동 근거';
     if (value === 'sample') return '샘플';
     if (value === 'ai') return 'AI 해석';
+    if (value === 'praise') return '호평 근거';
+    if (value === 'complaint') return '불만 근거';
+    if (value === 'mixed') return '혼합 근거';
     return value || '근거';
+  }
+
+  function evidenceClaimTitle(item: ApiEvidence) {
+    const cluster = clusterTitle(item.cluster_id);
+    if (!item.note) return cluster || '근거 문장';
+    if (item.note.toLowerCase().startsWith('representative review score')) return cluster || '대표 리뷰';
+    return item.note;
   }
 
   function statusLabel(value: string) {
@@ -1352,11 +1874,11 @@
       <b>현재 프로젝트</b>
       <dl>
         <dt>게임</dt>
-        <dd>Hades II</dd>
+        <dd>{selectedGame.name}</dd>
+        <dt>App ID</dt>
+        <dd>{selectedGame.appId}</dd>
         <dt>리뷰</dt>
-        <dd>{projectReviewCount}</dd>
-        <dt>언어</dt>
-        <dd>{projectLanguageCount}</dd>
+        <dd>{formatCount(selectedGame.reviewCount)}</dd>
       </dl>
     </div>
   </aside>
@@ -1365,35 +1887,115 @@
     <header class="topbar">
       <label class="searchbar">
         <Search />
-        <input value="Hades II · app/1145350" aria-label="Steam 게임 검색" readonly />
+        <input value={`${selectedGame.name} · app/${selectedGame.appId}`} aria-label="Steam 게임 검색" readonly />
       </label>
       <div class="actions">
         <span class="status" class:offline={apiState !== 'online'}>{apiMessage}</span>
-        <button class="icon-button" title="설정" type="button" on:click={() => setTab('settings')}><Settings2 /></button>
-        <button class="ghost-button" title="Steam에서 최신 리뷰를 가져와 로컬 분석 데이터를 갱신" type="button" disabled={isRefreshing} on:click={refreshSteamReviews}>
+        <button class="icon-button" title="설정" type="button" on:click={() => (showSettingsPanel = true)}><Settings2 /></button>
+        <button class="ghost-button" title="Steam에서 최신 리뷰를 가져와 로컬 분석 데이터를 갱신" type="button" disabled={isRefreshing} on:click={() => refreshSteamReviews()}>
           <Database /><span>{isRefreshing ? '갱신 중' : '리뷰 갱신'}</span>
         </button>
         <button class="primary-button" type="button" on:click={() => setTab('report')}><Sparkles /><span>AI 리포트</span></button>
       </div>
     </header>
 
-    <div class="content">
+    <div class="content" class:library-content={activeTab === 'library'} class:wide-content={!showInspector}>
       <main class="main">
+        <section class:active={activeTab === 'library'} class="tab-view" aria-label="게임 라이브러리">
+          <PageIntro title="게임 라이브러리" subtitle="여러 Steam 게임을 프로젝트처럼 저장하고, 수집·분석·리포트 상태를 한 화면에서 관리합니다.">
+            <div class="actions">
+              <button class="ghost-button" type="button" on:click={() => (showSettingsPanel = true)}><Settings2 /><span>설정</span></button>
+              <button class="primary-button" type="button" on:click={() => (showGameDialog = true)}><Plus /><span>게임 추가</span></button>
+            </div>
+          </PageIntro>
+
+          <MetricStrip items={libraryMetrics} />
+
+          <section class="library-panel" aria-label="게임 목록">
+            <div class="library-toolbar">
+              <label class="library-search">
+                <Search />
+                <input bind:value={libraryQuery} placeholder="게임명, Steam App ID, 태그 검색" />
+              </label>
+              <div class="library-filters">
+                {#each libraryFilterOptions as filter}
+                  <button
+                    class="segment"
+                    class:active={libraryFilter === filter.id}
+                    type="button"
+                    on:click={() => (libraryFilter = filter.id)}
+                  >
+                    {filter.label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+
+            <div class="library-summary">
+              <span>{formatCount(filteredLibraryGames.length)}개 표시</span>
+              <span>{formatCount(gameProjects.reduce((sum, game) => sum + game.reviewCount, 0))}개 리뷰 저장됨</span>
+            </div>
+
+            <div class="library-table">
+              <div class="library-head">
+                <span>게임</span>
+                <span>상태</span>
+                <span>리뷰</span>
+                <span>추천율</span>
+                <span>최근 수집</span>
+                <span>작업</span>
+              </div>
+              <div class="library-rows">
+                {#each filteredLibraryGames as game}
+                  <article class="library-row" class:active={selectedGameId === game.id}>
+                    <button class="library-game" type="button" on:click={() => openGame(game)}>
+                      <span class="game-cover">{game.shortName}</span>
+                      <span>
+                        <strong>{game.name}</strong>
+                        <small>app/{game.appId} · {game.tags.slice(0, 2).join(' · ')} · {game.queue}</small>
+                      </span>
+                    </button>
+                    <span class={`sentiment ${game.statusTone}`}>{game.status}</span>
+                    <span>{formatCount(game.reviewCount)}</span>
+                    <span class="score-cell">
+                      <strong>{game.reviewCount ? formatPercent(game.positiveRatio) : '-'}</strong>
+                      <span class="mini-track" style={`--score: ${Math.round(safeRatio(game.positiveRatio) * 100)}%`}><b></b></span>
+                    </span>
+                    <span>{latestLabel(game.lastSync)}</span>
+                    <span class="row-actions">
+                      <button
+                        class={game.nextAction === 'open' ? 'ghost-button compact' : 'primary-button compact'}
+                        type="button"
+                        disabled={isRefreshing || isAnalyzing}
+                        on:click={() => runGameAction(game)}
+                      >
+                        {actionButtonLabel(game.nextAction)}
+                      </button>
+                    </span>
+                  </article>
+                {:else}
+                  <div class="empty-state">검색 결과가 없습니다.</div>
+                {/each}
+              </div>
+            </div>
+          </section>
+        </section>
+
         <section class:active={activeTab === 'dashboard'} class="tab-view" aria-label="대시보드">
           <section class="overview">
             <div class="panel game-summary">
               <div class="game-title">
                 <div class="section-head">
                   <div>
-                    <h1>Hades II 리뷰 반응</h1>
+                    <h1>{selectedGame.name} 리뷰 반응</h1>
                     <p>{buildGeneratedSummary(dashboard, clusters, evidenceItems)}</p>
                   </div>
                 </div>
                 <div class="tag-row">
-                  <span class="tag">{dataSourceLabel()}</span>
-                  <span class="tag">Steam app/{APP_ID}</span>
+                  <span class="tag">{dataSourceText}</span>
+                  <span class="tag">Steam app/{selectedAppId}</span>
                   <span class="tag">{formatCount(dashboard.languages)}개 언어</span>
-                  <span class="tag">{clusterSourceLabel()}</span>
+                  <span class="tag">{clusterSourceText}</span>
                 </div>
               </div>
               <div class="score-ring" style={`--score: ${positiveRatio}%`} aria-label={`추천 비율 ${positiveRatio}퍼센트`}>
@@ -1406,6 +2008,17 @@
               {#each kpis as item}
                 <div class="kpi"><span>{item[0]}</span><strong>{item[1]}</strong><small>{item[2]}</small></div>
               {/each}
+            </div>
+          </section>
+
+          <section class="decision-strip">
+            <AuditPanel title="직군별 활용성 점검" rows={roleReadinessRows} />
+            <div class="method-note analysis-method">
+              <Info />
+              <div>
+                <strong>최근 분석 방식</strong>
+                <span>{analysisRunSummary}</span>
+              </div>
             </div>
           </section>
 
@@ -1484,7 +2097,7 @@
 
         <section class:active={activeTab === 'data'} class="tab-view" aria-label="데이터 갱신">
           <PageIntro title="데이터 갱신" subtitle="Steam 리뷰를 가져오고 원본 저장, 작업 상태, 분석 대기 상태를 확인합니다.">
-            <button class="primary-button" type="button" disabled={isRefreshing} on:click={refreshSteamReviews}><DownloadCloud /><span>{isRefreshing ? '가져오는 중' : '리뷰 가져오기'}</span></button>
+            <button class="primary-button" type="button" disabled={isRefreshing} on:click={() => refreshSteamReviews()}><DownloadCloud /><span>{isRefreshing ? '가져오는 중' : '리뷰 가져오기'}</span></button>
           </PageIntro>
           <div class="method-note"><Info /><div><strong>최근 갱신</strong><span>{refreshState}</span></div></div>
           <MetricStrip items={metrics} />
@@ -1494,7 +2107,7 @@
                 <div><h2>수집 조건</h2><p>/api/refresh-steam에 전달할 Steam 리뷰 수집 옵션입니다.</p></div>
               </div>
               <div class="field-grid">
-                <label class="field"><span>최대 리뷰 수</span><input type="number" min="1" max="1000" bind:value={refreshOptions.max_reviews} /></label>
+                <label class="field"><span>최대 리뷰 수</span><input type="number" min="1" max="50000" bind:value={refreshOptions.max_reviews} /></label>
                 <label class="field"><span>언어</span><select bind:value={refreshOptions.language}><option value="all">전체</option><option value="english">English</option><option value="koreana">Korean</option><option value="schinese">Simplified Chinese</option><option value="japanese">Japanese</option></select></label>
                 <label class="field"><span>리뷰 타입</span><select bind:value={refreshOptions.review_type}><option value="all">전체</option><option value="positive">추천</option><option value="negative">비추천</option></select></label>
                 <label class="field"><span>구매 유형</span><select bind:value={refreshOptions.purchase_type}><option value="all">전체</option><option value="steam">Steam 구매</option><option value="non_steam_purchase">비 Steam 구매</option></select></label>
@@ -1594,7 +2207,7 @@
 
         <section class:active={activeTab === 'runs'} class="tab-view" aria-label="분석 실행">
           <PageIntro title="분석 실행" subtitle="임베딩, 클러스터링, 토픽 태깅, AI 요약을 백엔드 작업으로 실행합니다.">
-            <button class="primary-button" type="button" disabled={isAnalyzing} on:click={startAnalysisRun}><Play /><span>{isAnalyzing ? '실행 중' : '분석 시작'}</span></button>
+            <button class="primary-button" type="button" disabled={isAnalyzing} on:click={() => startAnalysisRun()}><Play /><span>{isAnalyzing ? '실행 중' : '분석 시작'}</span></button>
           </PageIntro>
           <MetricStrip items={analysisMetrics} />
           <div class="method-note"><Info /><div><strong>분석 상태</strong><span>{analysisState}</span></div></div>
@@ -1624,22 +2237,49 @@
             ['잡음 리뷰', '짧은 문장, 반복 문구, 오프토픽 처리는 백엔드 분석 정책에 따릅니다.', '정책', 'mixed'],
             ['사람 검증', `${formatCount(evidenceItems.length)}개 근거를 근거 검증 탭에서 확인할 수 있습니다.`, evidenceItems.length ? '진행' : '대기', evidenceItems.length ? 'good' : 'mixed']
           ]} />
+          <SimpleTable
+            title="최근 분석 이력"
+            headers={['Run', '상태', '방식', '완료 시각']}
+            rows={analysisRunRows.length ? analysisRunRows : [['대기', '분석 이력이 없습니다.', '분석 시작 후 표시', '대기']]}
+          />
         </section>
 
         <section class:active={activeTab === 'clusters'} class="tab-view" aria-label="리뷰 클러스터">
           <PageIntro title="리뷰 클러스터" subtitle="언어가 달라도 같은 의미의 리뷰를 묶어서 호평, 불만, 기능 요청을 봅니다.">
-            <span class="status">{clusterSourceLabel()} · {formatCount(clusters.length)}개</span>
+            <span class="status">{clusterSourceText} · {formatCount(filteredClusters.length)}/{formatCount(clusters.length)}개</span>
           </PageIntro>
+          <MetricStrip items={clusterMetrics} />
+          <AuditPanel title="먼저 볼 클러스터" rows={clusterFocusRows} />
           {#if clusters.length === 0}
             <div class="empty-state">클러스터가 없습니다. 데이터 갱신 후 분석 실행을 시작하세요.</div>
           {:else}
+            <section class="cluster-tools" aria-label="클러스터 필터">
+              <label class="library-search">
+                <Search />
+                <input bind:value={clusterQuery} placeholder="클러스터명, 요약, 언어 태그 검색" />
+              </label>
+              <div class="library-filters">
+                {#each clusterToneOptions as filter}
+                  <button
+                    class="segment"
+                    class:active={clusterToneFilter === filter.id}
+                    type="button"
+                    on:click={() => (clusterToneFilter = filter.id)}
+                  >
+                    {filter.label}
+                  </button>
+                {/each}
+              </div>
+            </section>
             <section class="cluster-grid">
-              {#each clusters as cluster}
+              {#each filteredClusters as cluster}
                 <button class="cluster-node" class:active={activeCluster === cluster.id} type="button" on:click={() => loadClusterReviews(cluster.id)}>
                   <header><h3>{cluster.title}</h3><span class={`sentiment ${cluster.tone}`}>{cluster.count}</span></header>
                   <p>{cluster.description}</p>
                   <div class="cluster-tags">{#each cluster.tags as tag}<span class="cluster-tag">{tag}</span>{/each}</div>
                 </button>
+              {:else}
+                <div class="empty-state">조건에 맞는 클러스터가 없습니다.</div>
               {/each}
             </section>
             {#if selectedCluster}
@@ -1712,7 +2352,7 @@
             <button class="primary-button" type="button" disabled={isGeneratingReport} on:click={generateReport}><Sparkles /><span>{isGeneratingReport ? '생성 중' : '다시 생성'}</span></button>
           </PageIntro>
           <AuditPanel title="리포트 검증 상태" rows={[
-            ['데이터 버전', `${dataSourceLabel()} · ${latestLabel(dashboard.latest_review_at)}`, dataSource === 'api' ? '확인' : '샘플', dataSource === 'api' ? 'good' : 'mixed'],
+            ['데이터 버전', `${dataSourceText} · ${latestLabel(dashboard.latest_review_at)}`, dataSource === 'api' ? '확인' : '샘플', dataSource === 'api' ? 'good' : 'mixed'],
             ['리포트 API', reports.length ? `${formatCount(reports.length)}개 저장됨` : reportState, reports.length ? '준비' : '대기', reports.length ? 'good' : 'mixed'],
             ['근거 확인', `${formatCount(evidenceItems.length)}개 근거 연결`, evidenceItems.length ? '진행' : '대기', evidenceItems.length ? 'good' : 'mixed']
           ]} />
@@ -1734,7 +2374,7 @@
 
         <section class:active={activeTab === 'settings'} class="tab-view" aria-label="모델 설정">
           <PageIntro title="모델 설정" subtitle="/api/settings/models 기준으로 로컬/클라우드 모델 상태를 확인합니다.">
-            <button class="ghost-button" type="button" on:click={loadApiData}><PlugZap /><span>연결 확인</span></button>
+            <button class="ghost-button" type="button" on:click={() => loadApiData()}><PlugZap /><span>연결 확인</span></button>
           </PageIntro>
           <div class="method-note"><Info /><div><strong>모델 상태</strong><span>우선 /api/settings/models를 읽고, 없으면 현재 백엔드의 /api/settings로 fallback합니다.</span></div></div>
           <section class="settings-grid">
@@ -1764,40 +2404,93 @@
         </section>
       </main>
 
+      {#if showInspector}
       <aside class="inspector" aria-label="AI 분석 패널">
         <div class="inspector-inner">
-          <section class="panel ai-panel">
-            <div class="section-head"><div><h3>AI 브리프</h3><p>{dataSourceLabel()}</p></div><span class="status">{modelOptions[0]?.name ?? 'Model'}</span></div>
-            <div class="ai-summary">
-              {#each aiBrief as paragraph}
-                <p>{paragraph}</p>
-              {/each}
-            </div>
-          </section>
-          <AuditPanel title="분석 신뢰도" rows={inspectorRows} compact />
-          <section class="panel priority">
-            <div class="section-head"><div><h3>기획 우선순위</h3><p>빈도, 심각도, 최근성을 함께 보되 인과로 단정하지 않습니다.</p></div></div>
-            <ol class="priority-list">
-              {#each priorityItems as item}
-                <li><span class="rank">{item[0]}</span><div><strong>{item[1]}</strong><span>{item[2]}</span></div><span class={`sentiment ${item[4]}`}>{item[3]}</span></li>
-              {/each}
-            </ol>
-          </section>
-          <section class="panel evidence">
-            <div class="section-head"><div><h3>근거 리뷰</h3><p>최근 근거 문장입니다.</p></div></div>
-            <div class="quote-list">
-              {#each evidenceItems.slice(0, 2) as evidence}
-                <article class="quote">
-                  <p>“{evidence.quote}”</p>
-                  <footer><span>{evidenceTypeLabel(evidence.evidence_type)}</span><span>{clusterTitle(evidence.cluster_id)}</span></footer>
-                </article>
-              {:else}
-                <div class="empty-state">근거 API 대기 중입니다.</div>
-              {/each}
-            </div>
-          </section>
+            <section class="panel ai-panel">
+              <div class="section-head"><div><h3>AI 브리프</h3><p>{dataSourceText}</p></div><span class="status">{modelOptions[0]?.name ?? 'Model'}</span></div>
+              <div class="ai-summary">
+                {#each aiBrief as paragraph}
+                  <p>{paragraph}</p>
+                {/each}
+              </div>
+            </section>
+            <AuditPanel title="분석 신뢰도" rows={inspectorRows} compact />
+            <section class="panel priority">
+              <div class="section-head"><div><h3>기획 우선순위</h3><p>빈도, 심각도, 최근성을 함께 보되 인과로 단정하지 않습니다.</p></div></div>
+              <ol class="priority-list">
+                {#each priorityItems as item}
+                  <li><span class="rank">{item[0]}</span><div><strong>{item[1]}</strong><span>{item[2]}</span></div><span class={`sentiment ${item[4]}`}>{item[3]}</span></li>
+                {/each}
+              </ol>
+            </section>
+            <section class="panel evidence">
+              <div class="section-head"><div><h3>근거 리뷰</h3><p>최근 근거 문장입니다.</p></div></div>
+              <div class="quote-list">
+                {#each evidenceItems.slice(0, 2) as evidence}
+                  <article class="quote">
+                    <p>“{evidence.quote}”</p>
+                    <footer><span>{evidenceTypeLabel(evidence.evidence_type)}</span><span>{clusterTitle(evidence.cluster_id)}</span></footer>
+                  </article>
+                {:else}
+                  <div class="empty-state">근거 API 대기 중입니다.</div>
+                {/each}
+              </div>
+            </section>
         </div>
       </aside>
+      {/if}
     </div>
   </div>
 </div>
+
+{#if showGameDialog}
+  <div class="modal-backdrop" role="presentation" on:click={(event) => event.target === event.currentTarget && (showGameDialog = false)}>
+    <form class="modal-card" aria-label="게임 추가" on:submit|preventDefault={createGame}>
+      <div class="modal-head">
+        <div>
+          <h2>게임 추가</h2>
+          <p>Steam App ID와 표시 이름을 저장합니다. 수집과 분석은 목록에서 직접 시작합니다.</p>
+        </div>
+        <button class="ghost-button compact" type="button" on:click={() => (showGameDialog = false)}>닫기</button>
+      </div>
+      <div class="field-grid">
+        <label class="field"><span>Steam App ID</span><input bind:value={gameForm.app_id} placeholder="예: 1145350" /></label>
+        <label class="field"><span>게임명</span><input bind:value={gameForm.name} placeholder="예: Hades II" /></label>
+        <label class="field"><span>별칭</span><input bind:value={gameForm.short_name} placeholder="예: HII" /></label>
+        <label class="field"><span>태그</span><input bind:value={gameForm.tags} placeholder="패치 추적, 비교군" /></label>
+      </div>
+      <label class="field modal-note"><span>메모</span><input bind:value={gameForm.note} placeholder="이 게임을 왜 추적하는지 적어둡니다." /></label>
+      <div class="modal-actions">
+        <span>{gameFormState}</span>
+        <button class="primary-button" type="submit"><Plus /><span>저장</span></button>
+      </div>
+    </form>
+  </div>
+{/if}
+
+{#if showSettingsPanel}
+  <div class="modal-backdrop align-right" role="presentation" on:click={(event) => event.target === event.currentTarget && (showSettingsPanel = false)}>
+    <section class="modal-card settings-drawer" aria-label="설정 패널">
+      <div class="modal-head">
+        <div>
+          <h2>설정</h2>
+          <p>수집, 분석, 큐 기본값입니다.</p>
+        </div>
+        <button class="ghost-button compact" type="button" on:click={() => (showSettingsPanel = false)}>닫기</button>
+      </div>
+      <div class="field-grid">
+        <label class="field"><span>수집 언어</span><select bind:value={refreshOptions.language}><option value="all">전체</option><option value="english">EN</option><option value="koreana">KO</option><option value="schinese">ZH</option><option value="japanese">JA</option></select></label>
+        <label class="field"><span>최대 리뷰</span><input type="number" min="1" max="50000" bind:value={refreshOptions.max_reviews} /></label>
+        <label class="field"><span>분석 범위</span><select bind:value={analysisOptions.scope}><option value="new">새 리뷰</option><option value="all">전체</option></select></label>
+        <label class="field"><span>최소 클러스터</span><input type="number" min="1" max="1000" bind:value={analysisOptions.min_cluster_size} /></label>
+        <label class="field"><span>임베딩</span><input bind:value={analysisOptions.embedding_model} /></label>
+        <label class="field"><span>LLM</span><select bind:value={analysisOptions.llm_provider}><option value="lm_studio">LM Studio</option><option value="none">사용 안 함</option></select></label>
+      </div>
+      <div class="modal-actions">
+        <span>현재 v1은 자동 큐 대신 목록 버튼으로 수동 실행합니다.</span>
+        <button class="primary-button" type="button" on:click={() => (showSettingsPanel = false)}>적용</button>
+      </div>
+    </section>
+  </div>
+{/if}

@@ -17,6 +17,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
             ("GET", "/health", None),
             ("GET", "/api/dashboard", None),
             ("GET", "/api/languages", None),
+            ("GET", "/api/games", None),
             ("GET", "/api/events", None),
             ("GET", "/api/clusters", None),
             ("GET", "/api/evidence", None),
@@ -28,6 +29,28 @@ with tempfile.TemporaryDirectory() as tmpdir:
         for method, path, payload in read_checks:
             response = client.request(method, path, json=payload)
             response.raise_for_status()
+
+        games = client.get("/api/games")
+        games.raise_for_status()
+        default_game = games.json()[0]
+        assert default_game["app_id"] == "1145350"
+        assert default_game["review_count"] >= 1
+        assert "next_action" in default_game
+        assert "cluster_count" in default_game
+
+        created_game = client.post(
+            "/api/games",
+            json={"app_id": "999001", "name": "Smoke Test Game", "short_name": "STG", "tags": ["smoke"]},
+        )
+        created_game.raise_for_status()
+        assert created_game.json()["name"] == "Smoke Test Game"
+        assert created_game.json()["short_name"] == "STG"
+        assert created_game.json()["tags"] == ["smoke"]
+
+        updated_game = client.patch("/api/games/999001", json={"name": "Smoke Test Game Updated", "note": "patched"})
+        updated_game.raise_for_status()
+        assert updated_game.json()["name"] == "Smoke Test Game Updated"
+        assert updated_game.json()["note"] == "patched"
 
         refresh = client.post("/api/refresh-steam", json={"max_reviews": 5, "use_live_steam": False})
         refresh.raise_for_status()
@@ -41,6 +64,16 @@ with tempfile.TemporaryDirectory() as tmpdir:
         analysis_payload = analysis.json()
         assert analysis_payload["analysis_run"]["status"] == "succeeded"
         assert analysis_payload["reviews_analyzed"] >= 1
+
+        scoped_refresh = client.post(
+            "/api/refresh-steam",
+            json={"app_id": "999001", "max_reviews": 3, "use_live_steam": False},
+        )
+        scoped_refresh.raise_for_status()
+        scoped_dashboard = client.get("/api/dashboard?app_id=999001")
+        scoped_dashboard.raise_for_status()
+        assert scoped_dashboard.json()["total_reviews"] == 3
+        assert client.get("/api/languages?app_id=999001").json()
 
         for path in [
             "/api/analysis-runs",
@@ -57,5 +90,9 @@ with tempfile.TemporaryDirectory() as tmpdir:
         event_id = events.json()[0]["id"]
         impact = client.get(f"/api/events/{event_id}/impact?window_days=14")
         impact.raise_for_status()
+
+        deleted_game = client.delete("/api/games/999001")
+        deleted_game.raise_for_status()
+        assert deleted_game.json()["deleted"] is True
 
 print("ReviewForge backend smoke test passed.")
