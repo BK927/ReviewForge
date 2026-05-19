@@ -90,6 +90,10 @@ with tempfile.TemporaryDirectory() as tmpdir:
             assert response.json()
 
         cluster_id = client.get("/api/clusters").json()[0]["id"]
+        cluster_payload = client.get("/api/clusters").json()
+        assert cluster_payload[0]["top_keywords"]
+        assert cluster_payload[0]["keyword_method"] in {"ctfidf", "frequency"}
+        assert cluster_payload[0]["insight"]["source"] == "deterministic"
         sampled_reviews = client.get(f"/api/clusters/{cluster_id}/reviews?sample=complaint&limit=5")
         sampled_reviews.raise_for_status()
         assert sampled_reviews.json()

@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS clusters (
     exemplar_review_id VARCHAR,
     positive_ratio DOUBLE,
     top_keywords JSON,
+    keyword_method VARCHAR,
     quality_warning VARCHAR,
     created_at TIMESTAMP NOT NULL DEFAULT current_timestamp
 );
@@ -118,6 +119,8 @@ CREATE TABLE IF NOT EXISTS cluster_insights (
     marketing_angle TEXT,
     confidence DOUBLE NOT NULL DEFAULT 0.5,
     warnings JSON,
+    source VARCHAR,
+    model VARCHAR,
     created_at TIMESTAMP NOT NULL DEFAULT current_timestamp
 );
 
@@ -218,7 +221,10 @@ def run_migrations(conn: duckdb.DuckDBPyConnection) -> None:
     _add_column_if_missing(conn, "clusters", "analysis_run_id", "BIGINT")
     _add_column_if_missing(conn, "clusters", "positive_ratio", "DOUBLE")
     _add_column_if_missing(conn, "clusters", "top_keywords", "JSON")
+    _add_column_if_missing(conn, "clusters", "keyword_method", "VARCHAR")
     _add_column_if_missing(conn, "clusters", "quality_warning", "VARCHAR")
+    _add_column_if_missing(conn, "cluster_insights", "source", "VARCHAR")
+    _add_column_if_missing(conn, "cluster_insights", "model", "VARCHAR")
     _add_column_if_missing(conn, "evidence", "analysis_run_id", "BIGINT")
     _add_column_if_missing(conn, "evidence", "claim_id", "BIGINT")
     _add_column_if_missing(conn, "evidence", "evidence_role", "VARCHAR")

@@ -57,6 +57,8 @@ class ClusterInsight:
     marketing_angle: str
     confidence: float
     warnings: list[str]
+    source: str = "deterministic"
+    model: str | None = None
 
 
 THEMES = [
@@ -151,12 +153,23 @@ STOPWORDS = {
     "and",
     "but",
     "for",
+    "to",
     "with",
     "this",
     "that",
     "game",
     "games",
     "balatro",
+    "all",
+    "any",
+    "around",
+    "at",
+    "back",
+    "be",
+    "been",
+    "being",
+    "big",
+    "by",
     "it",
     "is",
     "in",
@@ -164,6 +177,8 @@ STOPWORDS = {
     "on",
     "or",
     "so",
+    "some",
+    "such",
     "my",
     "we",
     "he",
@@ -197,40 +212,99 @@ STOPWORDS = {
     "can",
     "cant",
     "could",
+    "did",
+    "didnt",
     "dont",
+    "don't",
     "does",
+    "doesnt",
+    "because",
+    "before",
+    "ever",
+    "even",
+    "first",
+    "from",
+    "go",
+    "going",
     "get",
     "got",
     "had",
     "has",
     "have",
+    "having",
+    "how",
+    "if",
     "into",
+    "isnt",
     "its",
+    "it's",
+    "ive",
+    "i've",
+    "ill",
+    "i'll",
+    "im",
+    "i'm",
     "just",
+    "know",
     "like",
+    "lot",
     "make",
     "makes",
     "more",
+    "most",
+    "many",
     "much",
+    "need",
     "not",
+    "nothing",
+    "now",
     "one",
     "only",
+    "other",
     "out",
+    "over",
+    "pretty",
     "really",
+    "see",
+    "stuff",
+    "while",
     "than",
     "then",
     "they",
+    "think",
     "too",
+    "try",
+    "up",
     "very",
     "was",
     "were",
     "what",
     "when",
+    "way",
+    "which",
+    "who",
+    "why",
     "will",
+    "would",
+    "wouldnt",
     "you",
+    "youre",
+    "you're",
     "your",
+    "ve",
+    "want",
+    "without",
+    "review",
+    "recommend",
+    "recommended",
+    "recommendation",
+    "steam",
     "10",
     "100",
+    "01",
+    "2024",
+    "2025",
+    "2026",
     "de",
     "del",
     "des",
@@ -238,11 +312,14 @@ STOPWORDS = {
     "el",
     "en",
     "es",
+    "esse",
     "est",
     "et",
+    "eu",
     "il",
     "je",
     "la",
+    "las",
     "le",
     "les",
     "lo",
@@ -253,6 +330,7 @@ STOPWORDS = {
     "pas",
     "por",
     "que",
+    "qui",
     "se",
     "un",
     "una",
@@ -263,9 +341,25 @@ STOPWORDS = {
     "pero",
     "este",
     "esta",
+    "como",
     "con",
+    "com",
+    "do",
     "si",
+    "sin",
+    "para",
     "te",
+    "todo",
+    "tudo",
+    "mas",
+    "mais",
+    "muito",
+    "na",
+    "al",
+    "horas",
+    "jugar",
+    "jogo",
+    "jeu",
     "das",
     "der",
     "die",
@@ -276,6 +370,10 @@ STOPWORDS = {
     "mit",
     "nicht",
     "und",
+    "zu",
+    "den",
+    "dem",
+    "einfach",
     "на",
     "не",
     "что",
@@ -348,6 +446,8 @@ def run_local_analysis(
                 "Semantic and TF-IDF clustering failed; used keyword fallback "
                 f"({exc.__class__.__name__}, {fallback_exc.__class__.__name__})."
             )
+
+    groups = _apply_ctfidf_keywords(groups)
 
     if generate_ai_summary and llm_provider in {"lmstudio", "lm_studio"}:
         groups = _enrich_cluster_insights(groups, app_id, use_lmstudio_labels, llm_model)
@@ -728,6 +828,7 @@ def _describe_group(
     quality_warning = _quality_warning(rows, quality_by_id)
     if best_theme:
         label = best_theme.label
+        label_source = "theme"
         summary = f"{len(rows)}개 리뷰에서 {best_theme.summary} 긍정 비율은 {positive_ratio:.0%}입니다."
     else:
         if sentiment == "positive":
@@ -738,6 +839,7 @@ def _describe_group(
             label = "혼합 의견 묶음"
         if keywords:
             label = f"{keywords[0]} 중심 의견"
+        label_source = "keyword"
         keyword_text = ", ".join(keywords[:4]) if keywords else "공통 표현 부족"
         summary = f"{len(rows)}개 리뷰가 유사한 표현으로 묶였습니다. 주요 단어는 {keyword_text}이며 긍정 비율은 {_positive_ratio(rows):.0%}입니다."
     return {
@@ -747,9 +849,132 @@ def _describe_group(
         "language": language,
         "reviews": members,
         "keywords": keywords,
+        "keyword_method": "frequency",
+        "label_source": label_source,
         "positive_ratio": positive_ratio,
         "quality_warning": quality_warning,
     }
+
+
+def _apply_ctfidf_keywords(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if len(groups) < 2:
+        return groups
+
+    try:
+        import numpy as np
+        from sklearn.feature_extraction.text import CountVectorizer
+
+        documents = [_cluster_keyword_document(group) for group in groups]
+        if sum(1 for document in documents if document.strip()) < 2:
+            return groups
+
+        vectorizer = CountVectorizer(
+            lowercase=True,
+            ngram_range=(1, 3),
+            min_df=1,
+            max_df=0.85 if len(groups) < 4 else 0.55,
+            max_features=8000,
+            stop_words=sorted(STOPWORDS),
+            token_pattern=r"(?u)\b[A-Za-z가-힣ぁ-んァ-ン一-龥0-9][A-Za-z가-힣ぁ-んァ-ン一-龥0-9']+\b",
+        )
+        matrix = vectorizer.fit_transform(documents).astype(float)
+        if matrix.shape[1] == 0:
+            return groups
+
+        counts = matrix.toarray()
+        row_totals = np.maximum(counts.sum(axis=1, keepdims=True), 1.0)
+        term_cluster_counts = np.maximum((counts > 0).sum(axis=0), 1)
+        idf = np.log((1 + len(groups)) / (1 + term_cluster_counts)) + 1.0
+        scores = (counts / row_totals) * idf
+        terms = vectorizer.get_feature_names_out()
+    except Exception:
+        return groups
+
+    for group_index, group in enumerate(groups):
+        ranked: list[tuple[str, float]] = []
+        for index in np.argsort(scores[group_index])[::-1][:160]:
+            count = float(counts[group_index, index])
+            if count < 2:
+                continue
+            term = str(terms[index])
+            length_penalty = 1 + 0.18 * max(0, len(term.split()) - 1)
+            ranked.append((term, float(scores[group_index, index]) / length_penalty))
+        ranked.sort(key=lambda item: item[1], reverse=True)
+        keywords = _distinct_keywords(ranked, limit=8)
+        if not keywords:
+            continue
+        group["keywords"] = keywords
+        group["keyword_method"] = "ctfidf"
+        rows = [member["row"] for member in group["reviews"]]
+        if group.get("label_source") == "keyword":
+            group["label"] = f"{keywords[0]} 중심 의견"
+            keyword_text = ", ".join(keywords[:4])
+            group["summary"] = (
+                f"{len(rows)}개 리뷰가 유사한 표현으로 묶였습니다. "
+                f"주요 표현은 {keyword_text}이며 긍정 비율은 {_positive_ratio(rows):.0%}입니다."
+            )
+    return groups
+
+
+def _cluster_keyword_document(group: dict[str, Any]) -> str:
+    reviews = []
+    for member in group.get("reviews", []):
+        row = member.get("row", {})
+        text = _normalize_review_text(str(row.get("review") or ""))
+        if text:
+            reviews.append(text)
+    return " ".join(reviews)
+
+
+def _distinct_keywords(ranked_terms: list[tuple[str, float]], limit: int) -> list[str]:
+    selected: list[str] = []
+    for term, score in ranked_terms:
+        cleaned = _clean_keyword(term)
+        if not cleaned or score <= 0:
+            continue
+        if _keyword_is_noise(cleaned):
+            continue
+        if any(_keywords_overlap(cleaned, existing) for existing in selected):
+            continue
+        selected.append(cleaned)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _clean_keyword(term: str) -> str:
+    compact = re.sub(r"\s+", " ", term.casefold()).strip(" '\".,!?;:()[]{}")
+    return compact
+
+
+def _keyword_is_noise(keyword: str) -> bool:
+    parts = keyword.split()
+    if not parts:
+        return True
+    if len(parts) > 2:
+        return True
+    if len(parts) > 1 and (parts[0] in STOPWORDS or parts[-1] in STOPWORDS):
+        return True
+    if all(part in STOPWORDS for part in parts):
+        return True
+    if len(parts) == 1 and parts[0] in STOPWORDS:
+        return True
+    if len(keyword) <= 2 and not re.search(r"[가-힣ぁ-んァ-ン一-龥]", keyword):
+        return True
+    if re.fullmatch(r"[\d_]+", keyword):
+        return True
+    return False
+
+
+def _keywords_overlap(candidate: str, existing: str) -> bool:
+    candidate_parts = set(candidate.split())
+    existing_parts = set(existing.split())
+    if not candidate_parts or not existing_parts:
+        return False
+    if candidate in existing or existing in candidate:
+        return True
+    overlap = len(candidate_parts & existing_parts)
+    return overlap >= min(len(candidate_parts), len(existing_parts)) and overlap > 0
 
 
 def _enrich_cluster_insights(
@@ -819,19 +1044,27 @@ def _lmstudio_cluster_insight(
     app_id: str | None,
     llm_model: str | None,
 ) -> ClusterInsight | None:
-    samples = _rank_members(group["reviews"])[:12]
+    samples = _balanced_lmstudio_samples(group["reviews"], limit=10)
+    keyword_text = ", ".join(group.get("keywords") or []) or "없음"
+    warning_text = group.get("quality_warning") or "없음"
     sample_text = "\n".join(
-        f"- {'추천' if member['row'].get('voted_up') else '비추천'} / {member['row'].get('language')}: "
+        f"- {'추천' if member['row'].get('voted_up') else '비추천'} / {member['row'].get('language')} / "
+        f"{_playtime_hours(member['row'].get('playtime_at_review'))}: "
         f"{_quote(member['row'].get('review') or '')}"
         for member in samples
     )
     prompt = (
         "Steam 리뷰 클러스터를 게임 기획자가 읽을 수 있게 한국어 JSON으로만 요약하세요. "
         "과장하지 말고 원문에 없는 사실을 만들지 마세요. "
-        f"Steam app_id={app_id}. 기존 라벨={group['label']}. 추천율={float(group.get('positive_ratio') or 0):.0%}.\n"
+        "title은 30자 안팎의 구체적인 명사구로 쓰고, summary는 원인/맥락을 1문장으로 쓰세요. "
+        "planner_action은 기획자가 다음에 확인할 액션이어야 합니다.\n"
+        f"Steam app_id={app_id}. 기존 라벨={group['label']}. "
+        f"키워드={keyword_text}. 추천율={float(group.get('positive_ratio') or 0):.0%}. "
+        f"품질 경고={warning_text}.\n"
         f"샘플:\n{sample_text}\n"
         'JSON keys: title, summary, praise, pain_point, planner_action, marketing_angle, confidence, warnings'
     )
+    model: str | None = None
     try:
         with httpx.Client(timeout=45) as client:
             model = _lmstudio_default_model_sync(client, llm_model)
@@ -853,12 +1086,8 @@ def _lmstudio_cluster_insight(
     raw = _extract_lmstudio_text(payload)
     if isinstance(raw, dict):
         raw = json.dumps(raw)
-    match = re.search(r"\{.*\}", str(raw), flags=re.DOTALL)
-    if not match:
-        return None
-    try:
-        data = json.loads(match.group(0))
-    except json.JSONDecodeError:
+    data = _parse_json_object(str(raw))
+    if not data:
         return None
     return ClusterInsight(
         title=str(data.get("title") or fallback.title)[:80],
@@ -869,7 +1098,57 @@ def _lmstudio_cluster_insight(
         marketing_angle=str(data.get("marketing_angle") or fallback.marketing_angle),
         confidence=max(0.0, min(float(data.get("confidence") or fallback.confidence), 1.0)),
         warnings=_coerce_string_list(data.get("warnings", fallback.warnings)),
+        source="lm_studio",
+        model=model or llm_model,
     )
+
+
+def _balanced_lmstudio_samples(members: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    ranked = _rank_members(members)
+    selected: list[dict[str, Any]] = []
+    seen_hashes: set[str] = set()
+
+    def add_matching(predicate: Any, count: int) -> None:
+        for member in ranked:
+            if len(selected) >= limit:
+                return
+            if count <= 0:
+                return
+            if not predicate(member):
+                continue
+            text_hash = _text_hash(_quote(str(member["row"].get("review") or "")))
+            if text_hash in seen_hashes:
+                continue
+            selected.append(member)
+            seen_hashes.add(text_hash)
+            count -= 1
+
+    add_matching(lambda member: not bool(member["row"].get("voted_up")), max(2, limit // 3))
+    add_matching(lambda member: bool(member["row"].get("voted_up")), max(2, limit // 3))
+    add_matching(lambda _member: True, limit)
+    return selected[:limit]
+
+
+def _parse_json_object(raw: str) -> dict[str, Any] | None:
+    cleaned = re.sub(r"```(?:json)?", "", raw, flags=re.IGNORECASE).replace("```", "").strip()
+    match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _playtime_hours(value: Any) -> str:
+    try:
+        minutes = int(value or 0)
+    except (TypeError, ValueError):
+        minutes = 0
+    if minutes <= 0:
+        return "플레이타임 미상"
+    return f"{minutes / 60:.1f}h"
 
 
 def _extract_lmstudio_text(payload: dict[str, Any]) -> str:
@@ -1022,9 +1301,10 @@ def _store_analysis_outputs(
             """
             INSERT INTO clusters (
                 analysis_run_id, label, summary, sentiment, language, review_count,
-                avg_weighted_score, exemplar_review_id, positive_ratio, top_keywords, quality_warning
+                avg_weighted_score, exemplar_review_id, positive_ratio, top_keywords,
+                keyword_method, quality_warning
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
             """,
             [
                 analysis_run_id,
@@ -1037,6 +1317,7 @@ def _store_analysis_outputs(
                 exemplar,
                 group["positive_ratio"],
                 json.dumps(group["keywords"]),
+                group.get("keyword_method"),
                 group["quality_warning"],
             ],
         ).fetchone()[0]
@@ -1093,9 +1374,9 @@ def _insert_cluster_insight(conn: duckdb.DuckDBPyConnection, cluster_id: int, in
         """
         INSERT INTO cluster_insights (
             cluster_id, title, summary, praise, pain_point,
-            planner_action, marketing_angle, confidence, warnings
+            planner_action, marketing_angle, confidence, warnings, source, model
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             cluster_id,
@@ -1107,6 +1388,8 @@ def _insert_cluster_insight(conn: duckdb.DuckDBPyConnection, cluster_id: int, in
             insight.marketing_angle,
             insight.confidence,
             json.dumps(insight.warnings),
+            insight.source,
+            insight.model,
         ],
     )
 

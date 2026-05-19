@@ -95,6 +95,7 @@
     exemplar_review_id?: string | null;
     positive_ratio?: number | null;
     top_keywords?: string[] | null;
+    keyword_method?: string | null;
     quality_warning?: string | null;
     insight?: {
       title?: string | null;
@@ -105,6 +106,8 @@
       marketing_angle?: string | null;
       confidence?: number | null;
       warnings?: string[] | null;
+      source?: string | null;
+      model?: string | null;
     } | null;
     created_at?: string;
   };
@@ -248,7 +251,10 @@
     samples: ReviewSample[];
     positiveRatio: number | null;
     keywords: string[];
+    keywordMethod: string | null;
     qualityWarning: string | null;
+    insightSource: string | null;
+    insightModel: string | null;
     insight: NonNullable<ApiCluster['insight']> | null;
   };
 
@@ -401,7 +407,10 @@
       backend: false,
       positiveRatio: 0.42,
       keywords: ['반복', '보상', '후반'],
+      keywordMethod: 'sample',
       qualityWarning: null,
+      insightSource: null,
+      insightModel: null,
       insight: null,
       samples: [
         {
@@ -439,7 +448,10 @@
       backend: false,
       positiveRatio: 0.91,
       keywords: ['전투', '보스', '리듬'],
+      keywordMethod: 'sample',
       qualityWarning: null,
+      insightSource: null,
+      insightModel: null,
       insight: null,
       samples: [
         {
@@ -1289,6 +1301,9 @@
     const tone = sentimentTone(cluster.sentiment);
     const keywords = Array.isArray(cluster.top_keywords) ? cluster.top_keywords : [];
     const insight = cluster.insight ?? null;
+    const keywordMethod = cluster.keyword_method ?? null;
+    const insightSource = insight?.source ?? null;
+    const insightModel = insight?.model ?? null;
     return {
       id: String(cluster.id),
       title: insight?.title || cluster.label || `Cluster ${cluster.id}`,
@@ -1305,9 +1320,25 @@
       samples: [],
       positiveRatio: ratioMaybe(cluster.positive_ratio) ?? null,
       keywords,
+      keywordMethod,
       qualityWarning: cluster.quality_warning ?? null,
+      insightSource,
+      insightModel,
       insight
     };
+  }
+
+  function keywordMethodLabel(method: string | null) {
+    if (method === 'ctfidf') return 'c-TF-IDF';
+    if (method === 'frequency') return '빈도 기반';
+    if (method === 'sample') return '샘플';
+    return '미상';
+  }
+
+  function insightSourceLabel(source: string | null) {
+    if (source === 'lm_studio') return 'LM Studio';
+    if (source === 'deterministic') return '규칙 기반';
+    return '미상';
   }
 
   function mapApiReview(review: ApiReview): ReviewSample {
@@ -2404,6 +2435,8 @@
                 <div class="cluster-insight-grid">
                   <div><strong>추천율</strong><span>{selectedCluster.positiveRatio === null ? '미상' : formatPercent(selectedCluster.positiveRatio)}</span></div>
                   <div><strong>키워드</strong><span>{selectedCluster.keywords.length ? selectedCluster.keywords.slice(0, 5).join(', ') : '키워드 없음'}</span></div>
+                  <div><strong>키워드 방식</strong><span>{keywordMethodLabel(selectedCluster.keywordMethod)}</span></div>
+                  <div><strong>AI 라벨</strong><span>{insightSourceLabel(selectedCluster.insightSource)}{selectedCluster.insightModel ? ` · ${selectedCluster.insightModel}` : ''}</span></div>
                   <div><strong>주의</strong><span>{selectedCluster.qualityWarning ?? selectedCluster.insight?.warnings?.[0] ?? '특이 경고 없음'}</span></div>
                 </div>
                 <div class="review-samples">

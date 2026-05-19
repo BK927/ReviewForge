@@ -109,6 +109,7 @@ class Cluster(BaseModel):
     exemplar_review_id: str | None = None
     positive_ratio: float | None = None
     top_keywords: list[str] = Field(default_factory=list)
+    keyword_method: str | None = None
     quality_warning: str | None = None
     insight: dict[str, Any] | None = None
     created_at: datetime

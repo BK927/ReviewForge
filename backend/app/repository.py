@@ -471,7 +471,9 @@ def list_clusters(language: str | None = None, app_id: str | None = None) -> lis
             ci.planner_action,
             ci.marketing_angle,
             ci.confidence,
-            ci.warnings
+            ci.warnings,
+            ci.source AS insight_source,
+            ci.model AS insight_model
         FROM clusters c
         LEFT JOIN cluster_insights ci ON ci.cluster_id = c.id
     """
@@ -1051,9 +1053,21 @@ def _hydrate_cluster_row(row: dict[str, Any]) -> dict[str, Any]:
             "marketing_angle": row.pop("marketing_angle", None),
             "confidence": row.pop("confidence", None),
             "warnings": warnings,
+            "source": row.pop("insight_source", None),
+            "model": row.pop("insight_model", None),
         }
     else:
-        for key in ["insight_title", "insight_summary", "praise", "pain_point", "planner_action", "marketing_angle", "confidence"]:
+        for key in [
+            "insight_title",
+            "insight_summary",
+            "praise",
+            "pain_point",
+            "planner_action",
+            "marketing_angle",
+            "confidence",
+            "insight_source",
+            "insight_model",
+        ]:
             row.pop(key, None)
     row.pop("warnings", None)
     row["top_keywords"] = top_keywords
