@@ -475,6 +475,16 @@
     tone: Tone;
   };
 
+  type LanguageMarketRow = {
+    issueId: string;
+    languageLabel: string;
+    title: string;
+    detail: string;
+    action: string;
+    badge: string;
+    tone: Tone;
+  };
+
   type GameProject = {
     id: string;
     name: string;
@@ -502,6 +512,7 @@
     { id: 'workbench', label: '분석 작업대', group: 'Project', icon: LayoutDashboard },
     { id: 'insights', label: '인사이트 보드', group: 'Analysis', icon: MessagesSquare },
     { id: 'evidence', label: '근거 확인', group: 'Analysis', icon: ScanSearch },
+    { id: 'languages', label: '언어권 비교', group: 'Analysis', icon: Languages },
     { id: 'axes', label: '평가축 관리', group: 'Analysis', icon: SlidersHorizontal },
     { id: 'report', label: '리포트', group: 'Analysis', icon: FileText },
     { id: 'settings', label: '실행/설정', group: 'Analysis', icon: Activity }
@@ -875,6 +886,7 @@
   $: positiveTopics = buildTopicRows('good');
   $: languageMetrics = buildLanguageMetrics(languages, dataSourceText);
   $: languageRows = buildLanguageRows(languages);
+  $: languageMarketRows = buildLanguageMarketRows(issues, languages);
   $: claimRows = buildClaimRows(claims, evidenceItems);
   $: evidenceTableRows = buildEvidenceTableRows(evidenceItems);
   $: reportBlocks = buildReportBlocks(latestReport, dashboard, issues, clusters, issueEvidenceItems.length || evidenceItems.length);
@@ -1492,6 +1504,11 @@
     });
   }
 
+  function openLanguageMarketIssue(issueId: string) {
+    activeIssue = issueId;
+    setTab('insights');
+  }
+
   function mapApiGame(game: ApiGame): GameProject {
     const reviewCount = numberFrom(game.review_count);
     const clusterCount = numberFrom(game.cluster_count);
@@ -1813,6 +1830,58 @@
     if (languageKeys.length >= 3) return ['다국어 반복'];
     if (languageKeys.length === 1) return [`${steamLanguageLabel(languageKeys[0])} 편중`];
     return ['세그먼트 근거 대기'];
+  }
+
+  function buildLanguageMarketRows(issueItems: ApiIssue[], languageItems: ApiLanguage[]): LanguageMarketRow[] {
+    const languageReviewCounts = new Map(languageItems.map((item) => [item.language, numberFrom(item.review_count)]));
+    return issueItems
+      .map((issue) => {
+        const segmentCounts = issue.segment_factors?.language_counts ?? {};
+        const counts = Object.keys(segmentCounts).length ? segmentCounts : issue.language_counts ?? {};
+        const entries = Object.entries(counts)
+          .map(([language, count]) => [language, numberFrom(count)] as const)
+          .filter(([, count]) => count > 0)
+          .sort((a, b) => b[1] - a[1]);
+        const total = entries.reduce((sum, [, count]) => sum + count, 0);
+        if (!entries.length || !total) return null;
+
+        const [dominantLanguage, dominantCount] = entries[0];
+        const dominantShare = dominantCount / total;
+        const isShared = entries.length >= 3 && dominantShare < 0.65;
+        const isLocalized = dominantShare >= 0.65;
+        const languageLabel = isShared ? '다국어 공통' : steamLanguageLabel(dominantLanguage);
+        const globalSample = languageReviewCounts.get(dominantLanguage);
+        const role =
+          issue.intent === 'praise'
+            ? '홍보 소재'
+            : isLocalized
+              ? '현지 검토'
+              : '공통 개선';
+        const detailParts = [
+          `${issueIntentLabel(issue.intent)} · ${issueAspectLabel(issue.aspect)}`,
+          isShared
+            ? `${formatCount(entries.length)}개 언어권에서 반복`
+            : `${languageLabel} 근거 ${formatPercent(dominantShare)}`,
+          globalSample ? `언어 표본 ${formatCount(globalSample)}개` : languageCountLabel(counts)
+        ];
+        return {
+          issueId: String(issue.id),
+          languageLabel,
+          title: issue.title,
+          detail: detailParts.join(' · '),
+          action: issuePriorityReasons(issue)[0] ?? plannerActionLabel(issue),
+          badge: role,
+          tone: issue.intent === 'praise' ? 'good' : isLocalized ? 'mixed' : issueTone(issue),
+          score:
+            issuePriorityScore(issue) +
+            (isLocalized ? dominantShare * 400 : 0) +
+            (isShared ? entries.length * 80 : 0)
+        };
+      })
+      .filter((item): item is LanguageMarketRow & { score: number } => item !== null)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6)
+      .map(({ score, ...item }) => item);
   }
 
   function issuePriorityScore(issue: ApiIssue) {
@@ -3430,6 +3499,29 @@
             <span class="status">{formatCount(languages.length)}개 언어</span>
           </PageIntro>
           <MetricStrip items={languageMetrics} />
+          <section class="panel language-market-panel">
+            <div class="section-head">
+              <div>
+                <h2>언어권별 시장 렌즈</h2>
+                <p>언어 표본과 이슈 카드 근거를 함께 보며 현지 검토, 공통 개선, 홍보 소재를 구분합니다.</p>
+              </div>
+              <button class="ghost-button" type="button" on:click={() => setTab('insights')}><MessagesSquare /><span>인사이트 보기</span></button>
+            </div>
+            <div class="language-market-list">
+              {#each languageMarketRows as row}
+                <button class="language-market-row" type="button" on:click={() => openLanguageMarketIssue(row.issueId)}>
+                  <span class={`claim ${row.tone}`}>{row.badge}</span>
+                  <div>
+                    <strong>{row.languageLabel} · {row.title}</strong>
+                    <small>{row.detail}</small>
+                    <em>{row.action}</em>
+                  </div>
+                </button>
+              {:else}
+                <div class="empty-state">이슈 분석을 실행하면 언어권별 의사결정 신호가 표시됩니다.</div>
+              {/each}
+            </div>
+          </section>
           <section class="detail-grid">
             <div class="panel">
               <div class="section-head"><div><h2>언어별 반응</h2><p>추천, 비추천, 가중 점수의 상대 비중입니다.</p></div></div>
