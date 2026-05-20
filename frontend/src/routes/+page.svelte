@@ -2222,8 +2222,15 @@
     const afterCount = numberFrom(item.after_count ?? after.review_count ?? after.count);
     const beforePositive = ratioMaybe(item.before_positive_ratio ?? before.positive_ratio ?? before.positive_rate);
     const afterPositive = ratioMaybe(item.after_positive_ratio ?? after.positive_ratio ?? after.positive_rate);
+    const deltaObject = objectFromUnknown(item.delta);
     const delta =
-      ratioMaybe(item.positive_ratio_delta ?? item.delta_positive_ratio ?? item.delta) ??
+      ratioMaybe(
+        item.positive_ratio_delta ??
+          item.delta_positive_ratio ??
+          deltaObject.positive_ratio ??
+          deltaObject.positive_rate ??
+          deltaObject.recommended_ratio
+      ) ??
       (beforePositive !== null && afterPositive !== null ? afterPositive - beforePositive : null);
     const topicRows = arrayFromPayload(item.topics ?? item.changes ?? item.deltas, ['items', 'rows']).slice(0, 5);
     return {
