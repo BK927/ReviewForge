@@ -1292,7 +1292,7 @@ h3 {
 
 .evidence-brief {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 12px;
   margin-top: 14px;
 }
@@ -1319,6 +1319,7 @@ h3 {
 
 .subissue-list,
 .verdict-strip,
+.risk-list,
 .evidence-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1327,7 +1328,8 @@ h3 {
 }
 
 .subissue-list span,
-.verdict-strip span {
+.verdict-strip span,
+.risk-list span {
   max-width: 100%;
   padding: 5px 8px;
   border-radius: 999px;
@@ -1355,6 +1357,12 @@ h3 {
 .verdict-strip .bad {
   color: var(--negative);
   background: rgba(255, 120, 120, 0.13);
+}
+
+.risk-list span {
+  border-radius: 8px;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .evidence-toolbar {

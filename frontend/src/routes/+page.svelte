@@ -1746,6 +1746,28 @@
     return stats.dominantLanguageShare >= 0.7 ? `${label} 편중` : label;
   }
 
+  function issueDecisionRiskNotes(issue: ApiIssue, stats: ReturnType<typeof buildIssueEvidenceStats>) {
+    const notes: string[] = [];
+    if (stats.all > 0 && stats.match === 0) {
+      notes.push('검증 통과 근거가 아직 없어 결론보다 후보로 다뤄야 합니다.');
+    } else if (stats.match > 0 && stats.match < 3) {
+      notes.push('검증 통과 근거가 3개 미만이라 원문 확인 후 판단하세요.');
+    }
+    if (stats.partial + stats.reject > 0) {
+      notes.push(`부분/제외 근거 ${formatCount(stats.partial + stats.reject)}개가 있어 요약 과장 여부를 확인하세요.`);
+    }
+    if (issue.intent !== 'praise' && (issue.positive_ratio ?? 0) >= 0.65) {
+      notes.push('추천 리뷰 비중이 높아 핵심 불만인지, 좋아하지만 아쉬운 점인지 구분해야 합니다.');
+    }
+    if (stats.dominantLanguageShare !== null && stats.dominantLanguageShare >= 0.7) {
+      notes.push(`${steamLanguageLabel(stats.dominantLanguage ?? 'unknown')} 근거가 편중되어 다른 언어권 확대 판단은 보류하세요.`);
+    }
+    if (issue.intent === 'praise' && stats.reject > 0) {
+      notes.push('강점 카드에 제외 근거가 섞여 외부 홍보 문구로 바로 쓰면 위험합니다.');
+    }
+    return notes.length ? notes.slice(0, 4) : ['큰 반례 신호는 보이지 않지만, 외부 의사결정 전 원문 리뷰를 한 번 더 대조하세요.'];
+  }
+
   function issuePriorityScore(issue: ApiIssue) {
     const statusWeight =
       issue.status === 'confirmed' ? 4 : issue.status === 'strength' ? 3 : issue.status === 'needs_review' ? 2 : 1;
@@ -3266,6 +3288,15 @@
                       <span class="mixed">부분 {formatCount(issueEvidenceStats.partial)}</span>
                       <span class="bad">제외 {formatCount(issueEvidenceStats.reject)}</span>
                       <span>미검증 {formatCount(issueEvidenceStats.unverified)}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <strong>판단 리스크</strong>
+                    <p>패치, 로드맵, 마케팅 문구로 옮기기 전에 먼저 확인할 반례와 편중 신호입니다.</p>
+                    <div class="risk-list">
+                      {#each issueDecisionRiskNotes(selectedIssue, issueEvidenceStats) as note}
+                        <span>{note}</span>
+                      {/each}
                     </div>
                   </div>
                 </section>
