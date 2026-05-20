@@ -54,6 +54,7 @@
     | 'settings';
 
   type Tone = 'good' | 'bad' | 'mixed';
+  type PlanningLaneId = 'fix' | 'preserve' | 'expand' | 'communicate';
   type ClusterId = string;
   type LibraryFilter = 'all' | 'ready' | 'needs-analysis' | 'needs-sync' | 'watch';
   type IssueStatusFilter = 'all' | 'confirmed' | 'needs_review' | 'strength' | 'diagnostic';
@@ -426,6 +427,23 @@
     tone: Tone;
   };
 
+  type PlanningDecision = {
+    id: PlanningLaneId;
+    label: string;
+    verb: string;
+    detail: string;
+    tone: Tone;
+  };
+
+  type PlanningLaneView = {
+    id: PlanningLaneId;
+    label: string;
+    count: number;
+    title: string;
+    detail: string;
+    tone: Tone;
+  };
+
   type GameProject = {
     id: string;
     name: string;
@@ -480,7 +498,7 @@
 
   const issueStatusOptions: Array<{ id: IssueStatusFilter; label: string }> = [
     { id: 'all', label: '전체' },
-    { id: 'confirmed', label: '확정 문제' },
+    { id: 'confirmed', label: '근거 충분' },
     { id: 'needs_review', label: '검토 필요' },
     { id: 'strength', label: '활용 포인트' },
     { id: 'diagnostic', label: '진단' }
@@ -846,6 +864,7 @@
   $: filteredIssueEvidenceItems = filterIssueEvidence(issueEvidenceItems, issueEvidenceFilter, issueEvidenceQuery);
   $: issueMetrics = buildIssueMetrics(issueSummary, dashboard);
   $: issueAuditRows = buildIssueAuditRows(issueSummary, dashboard);
+  $: planningLanes = buildPlanningLanes(issues);
   $: activeAxes = axes.filter((axis) => axis.status === 'active');
   $: pendingAxisSuggestions = axisSuggestions.filter(
     (suggestion) => suggestion.status === 'pending' && (showRawAxisSuggestions || suggestion.quality_gate !== 'fail')
@@ -1614,6 +1633,92 @@
     return '관찰 후보';
   }
 
+  function planningDecision(issue: ApiIssue): PlanningDecision {
+    if (issue.intent === 'bug') {
+      return {
+        id: 'fix',
+        label: '고칠 것',
+        verb: '재현/수정',
+        detail: '버그 근거를 재현 조건, 영향 범위, 수정 우선순위로 좁힙니다.',
+        tone: 'bad'
+      };
+    }
+    if (issue.intent === 'complaint') {
+      return {
+        id: 'fix',
+        label: '고칠 것',
+        verb: '수정/완화',
+        detail: '불만 근거를 패치 후보와 완화 메시지로 나눠 검토합니다.',
+        tone: 'bad'
+      };
+    }
+    if (issue.intent === 'request') {
+      return {
+        id: 'expand',
+        label: '확장할 것',
+        verb: '수요/범위 검토',
+        detail: '반복 요청이 실제 기능 범위나 후속 콘텐츠로 이어질지 확인합니다.',
+        tone: 'mixed'
+      };
+    }
+    if (issue.intent === 'praise' || issue.status === 'strength') {
+      return {
+        id: 'preserve',
+        label: '유지할 것',
+        verb: '보존/확장/홍보',
+        detail: '강점 근거를 유지할 재미, 확장 축, 스토어 문구 후보로 분리합니다.',
+        tone: 'good'
+      };
+    }
+    return {
+      id: 'communicate',
+      label: '소통할 것',
+      verb: '메시지 정리',
+      detail: '확신이 낮은 신호는 근거를 더 확인한 뒤 외부 문구로 옮깁니다.',
+      tone: 'mixed'
+    };
+  }
+
+  function buildPlanningLanes(issueItems: ApiIssue[]): PlanningLaneView[] {
+    const sorted = [...issueItems].sort((a, b) => issuePriorityScore(b) - issuePriorityScore(a));
+    const buckets = new Map<PlanningLaneId, ApiIssue[]>([
+      ['fix', []],
+      ['preserve', []],
+      ['expand', []],
+      ['communicate', []]
+    ]);
+    for (const issue of sorted) {
+      const decision = planningDecision(issue);
+      buckets.get(decision.id)?.push(issue);
+      if (issue.intent === 'praise' || issue.status === 'strength') {
+        buckets.get('communicate')?.push(issue);
+      }
+    }
+
+    const laneDefs: Array<Pick<PlanningLaneView, 'id' | 'label' | 'tone'> & { empty: string; hint: string }> = [
+      { id: 'fix', label: '고칠 것', tone: 'bad', empty: '수정 후보 대기', hint: '불만/버그 카드가 들어오면 표시됩니다.' },
+      { id: 'preserve', label: '유지할 것', tone: 'good', empty: '강점 후보 대기', hint: '추천 리뷰의 강점 카드가 들어오면 표시됩니다.' },
+      { id: 'expand', label: '확장할 것', tone: 'mixed', empty: '확장 요청 대기', hint: '요청 카드나 확장 후보가 들어오면 표시됩니다.' },
+      { id: 'communicate', label: '소통할 것', tone: 'good', empty: '문구 소재 대기', hint: '강점 카드에서 마케팅/공지 소재를 고릅니다.' }
+    ];
+
+    return laneDefs.map((lane) => {
+      const items = buckets.get(lane.id) ?? [];
+      const topIssue = items[0];
+      const topDecision = topIssue ? planningDecision(topIssue) : null;
+      return {
+        id: lane.id,
+        label: lane.label,
+        tone: lane.tone,
+        count: items.length,
+        title: topIssue?.title ?? lane.empty,
+        detail: topIssue
+          ? `${formatCount(topIssue.unique_review_count)}개 리뷰 · ${topDecision?.verb ?? plannerActionLabel(topIssue)}`
+          : lane.hint
+      };
+    });
+  }
+
   function languageDominanceLabel(stats: ReturnType<typeof buildIssueEvidenceStats>) {
     if (!stats.dominantLanguage || !stats.dominantLanguageShare) return '언어 근거 없음';
     const label = `${steamLanguageLabel(stats.dominantLanguage)} ${formatPercent(stats.dominantLanguageShare)}`;
@@ -1798,7 +1903,7 @@
   }
 
   function issueStatusLabel(status: string) {
-    if (status === 'confirmed') return '확정 문제';
+    if (status === 'confirmed') return '근거 충분';
     if (status === 'needs_review') return '검토';
     if (status === 'strength') return '활용 포인트';
     if (status === 'diagnostic') return '진단';
@@ -1809,7 +1914,7 @@
     if (intent === 'complaint') return '불만';
     if (intent === 'request') return '요청';
     if (intent === 'bug') return '버그';
-    if (intent === 'praise') return '호평';
+    if (intent === 'praise') return '강점';
     return '기타';
   }
 
@@ -2026,7 +2131,7 @@
     return [
       ['수집 리뷰', formatCount(summary.total_reviews), latestLabel(summary.latest_review_at)],
       ['추천 리뷰', formatCount(summary.positive_reviews), `${formatPercent(summary.positive_ratio)} 추천`],
-      ['확정 문제', formatCount(summary.confirmed_issues ?? 0), summary.issues ? `전체 ${formatCount(summary.issues)}개` : '분석 대기'],
+      ['근거 충분', formatCount(summary.confirmed_issues ?? 0), summary.issues ? `전체 ${formatCount(summary.issues)}개` : '분석 대기'],
       ['근거 문장', formatCount(summary.issue_evidence_items ?? summary.evidence_items), summary.issue_evidence_items ? '인사이트 근거' : sourceLabel]
     ];
   }
@@ -2039,7 +2144,7 @@
       ['관리 게임', formatCount(projects.length), '로컬 라이브러리'],
       ['저장 리뷰', formatCount(reviewTotal), '게임별 app_id 기준'],
       ['분석 완료', formatCount(analyzed), `${formatCount(waiting)}개 대기`],
-      ['확정 문제', formatCount(projects.reduce((total, game) => total + game.confirmedIssues, 0)), '게임별 최신 분석']
+      ['근거 충분', formatCount(projects.reduce((total, game) => total + game.confirmedIssues, 0)), '게임별 최신 분석']
     ];
   }
 
@@ -2048,7 +2153,7 @@
       ['Steam App ID', game.appId, '수집 키'],
       ['리뷰 수', formatCount(game.reviewCount), game.lastSync ? latestLabel(game.lastSync) : '수집 전'],
       ['추천율', formatPercent(game.positiveRatio), `${formatCount(game.languages)}개 언어`],
-      ['인사이트 보드', formatCount(game.issues), game.confirmedIssues ? `${formatCount(game.confirmedIssues)}개 확정` : '확정 문제 없음']
+      ['인사이트 보드', formatCount(game.issues), game.confirmedIssues ? `${formatCount(game.confirmedIssues)}개 근거 충분` : '근거 충분 카드 없음']
     ];
   }
 
@@ -2073,7 +2178,7 @@
   function buildIssueMetrics(summary: ApiIssueSummary, dashboardSummary: ApiDashboard): string[][] {
     const coverage = summary.issue_coverage ?? dashboardSummary.issue_coverage ?? null;
     return [
-      ['확정 문제', formatCount(summary.confirmed_issues), summary.confirmed_issues ? '메인 보드' : '근거 부족'],
+      ['근거 충분', formatCount(summary.confirmed_issues), summary.confirmed_issues ? '메인 보드' : '근거 부족'],
       ['검토 필요', formatCount(summary.needs_review_issues), '사람 확인 필요'],
       ['근거 문장', formatCount(summary.issue_evidence_items || dashboardSummary.issue_evidence_items || 0), '중복 제거 후'],
       ['불만 커버리지', coverage === null ? '미상' : formatPercent(coverage), coverage !== null && coverage < 0.6 ? '부분 분석' : '분석 범위']
@@ -2136,7 +2241,7 @@
       ],
       [
         '기획자',
-        `${formatCount(summary.confirmed_issues ?? 0)}개 확정 문제와 ${formatCount(summary.issue_evidence_items ?? evidence.length)}개 근거 문장을 우선 검토할 수 있습니다.`,
+        `${formatCount(summary.confirmed_issues ?? 0)}개 근거 충분 카드와 ${formatCount(summary.issue_evidence_items ?? evidence.length)}개 근거 문장을 우선 검토할 수 있습니다.`,
         (summary.confirmed_issues ?? 0) && (summary.issue_evidence_items ?? evidence.length) ? '사용 가능' : '보강',
         (summary.confirmed_issues ?? 0) && (summary.issue_evidence_items ?? evidence.length) ? 'good' : 'mixed'
       ],
@@ -2329,7 +2434,7 @@
     const fallbackBad = clusterItems.find((cluster) => cluster.tone === 'bad');
     const signalText = issueItems.length
       ? `${topStrength ? `강점 신호는 "${topStrength.title}"이고, ` : ''}${
-          topIssue ? `먼저 볼 이슈는 "${topIssue.title}"입니다. ` : '확정 이슈는 아직 충분하지 않습니다. '
+          topIssue ? `먼저 볼 이슈는 "${topIssue.title}"입니다. ` : '근거 충분 이슈는 아직 충분하지 않습니다. '
         }`
       : `${fallbackBad ? `기존 자동 묶음 기준 검토 신호는 "${fallbackBad.title}"입니다. ` : '이슈 보드 결과는 아직 없습니다. '}`;
     return `현재 ${formatCount(summary.total_reviews)}개 리뷰 기준 추천율은 ${formatPercent(summary.positive_ratio)}입니다. ${
@@ -2997,6 +3102,16 @@
           </PageIntro>
           <MetricStrip items={issueMetrics} />
           <AuditPanel title="인사이트 보드 신뢰도" rows={issueAuditRows} />
+          <section class="planning-lanes" aria-label="기획 판단 요약">
+            {#each planningLanes as lane}
+              <article class={`planning-lane ${lane.tone}`}>
+                <span>{lane.label}</span>
+                <strong>{formatCount(lane.count)}</strong>
+                <p>{lane.title}</p>
+                <small>{lane.detail}</small>
+              </article>
+            {/each}
+          </section>
           {#if issues.length === 0}
             <div class="empty-state">인사이트 보드가 없습니다. 분석 실행을 다시 시작하면 검증된 문제와 강점이 생성됩니다.</div>
           {:else}
@@ -3020,7 +3135,12 @@
             </section>
             <section class="issue-grid">
               {#each filteredIssues as issue}
+                {@const decision = planningDecision(issue)}
                 <button class="issue-card" class:active={activeIssue === String(issue.id)} type="button" on:click={() => loadIssueEvidence(issue.id)}>
+                  <div class="issue-decision">
+                    <span class={`decision-label ${decision.tone}`}>{decision.label}</span>
+                    <span>{decision.verb}</span>
+                  </div>
                   <header>
                     <div>
                       <h3>{issue.title}</h3>
@@ -3031,9 +3151,8 @@
                   <p>{issue.summary}</p>
                   <div class="issue-stats">
                     <span>{formatCount(issue.unique_review_count)}개 리뷰</span>
-                    <span>근거 {formatCount(issue.evidence_count ?? 0)}개</span>
+                    <span>연결 근거 {formatCount(issue.evidence_count ?? 0)}개</span>
                     <span>근거 강도 {issueStrengthLabel(issue)}</span>
-                    <span>{plannerActionLabel(issue)}</span>
                   </div>
                   <div class="cluster-tags">
                     {#each (issue.top_terms ?? []).slice(0, 4) as term}
@@ -3047,6 +3166,7 @@
               {/each}
             </section>
             {#if selectedIssue}
+              {@const selectedDecision = planningDecision(selectedIssue)}
               <section class="panel issue-detail">
                 <div class="detail-head">
                   <div>
@@ -3067,8 +3187,8 @@
                 <div class="method-note">
                   <Info />
                   <div>
-                    <strong>{plannerActionLabel(selectedIssue)}</strong>
-                    <span>{selectedIssue.recommended_action ?? '검증 통과 근거를 먼저 보고, 부분 관련/제외 근거로 반례가 있는지 확인하세요.'}</span>
+                    <strong>{selectedDecision.label} · {selectedDecision.verb}</strong>
+                    <span>{selectedIssue.recommended_action ?? selectedDecision.detail}</span>
                   </div>
                 </div>
                 <section class="evidence-brief" aria-label="인사이트 근거 탐색 요약">

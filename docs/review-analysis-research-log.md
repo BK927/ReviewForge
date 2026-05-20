@@ -545,3 +545,28 @@ LLM 카드 생성 실패:
 
 - 이 변경은 잘못된 라벨 확정을 줄이는 안전장치다. 좋은 최종 인사이트는 여전히 이슈 보드의 근거 검증 파이프라인이 담당해야 한다.
 - 기존 분석 run은 다시 분석하기 전까지 예전 라벨을 유지할 수 있다.
+
+## 2026-05-20 결정 액션 중심 fallback 개선
+
+문제:
+
+- LM Studio verifier를 쓰지 않는 deterministic fallback 카드가 여전히 `분량/완성도 불만`, `스토리/세계관/엔딩 강점`처럼 넓은 축명에 머무를 수 있었다.
+- 같은 `recommended_action`이 불만, 요청, 버그, 강점 카드에 그대로 붙으면 기획자와 마케터가 다음 판단을 바로 구분하기 어려웠다.
+
+적용한 방향:
+
+- 기존 `ClaimAxisRule`과 카드 evidence를 재사용해, 넓은 공통 축 안에서도 `루트/선택지 안내와 세이브 편의`, `캐릭터/아트/연출 매력` 같은 더 구체적인 focus를 우선 제목과 요약에 반영한다.
+- praise 카드는 문제 카드처럼 보이지 않게 `강점`보다 한 단계 실무적인 `활용 포인트` 표현을 사용한다.
+- `recommended_action` 앞에 `수정`, `수정/완화`, `개선/확장`, `유지/확장`, `홍보 문구/확장`, `소통/기대 관리` 같은 결정 액션을 붙인다.
+- 프론트엔드 인사이트 보드에는 `고칠 것`, `유지할 것`, `확장할 것`, `소통할 것` 판단 레인을 추가해 카드가 패치, 보존, 후속 콘텐츠, 마케팅 문구 중 어디로 이어지는지 먼저 보게 했다.
+
+검증:
+
+- smoke test에 synthetic route-guidance complaint와 character/art praise 사례를 추가해 deterministic focus title과 action taxonomy가 생성되는지 확인한다.
+- 이 변경은 API route나 response field를 바꾸지 않고, 기존 필드의 deterministic copy와 화면 배치를 개선한다.
+
+남은 한계:
+
+- focus는 규칙 기반 후보이므로 verifier의 `match`, `partial`, `reject`를 대체하지 않는다.
+- 실제 세 파일럿 게임에서 broad-label rate가 얼마나 줄었는지는 별도 측정이 필요하다.
+- 향후에는 action type을 `recommended_action` 문자열 안에 넣기보다 구조화된 필드로 분리하는 편이 더 좋다.

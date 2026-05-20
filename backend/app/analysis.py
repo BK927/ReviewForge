@@ -186,6 +186,16 @@ APP_BLOCKED_GLOBAL_THEME_KEYS: dict[str, set[str]] = {
 APP_BLOCKED_GENERIC_ASPECT_KEYS: dict[str, set[str]] = {
     "3101040": {"balance"},
 }
+BROAD_FALLBACK_ISSUE_ASPECT_KEYS = {
+    "general",
+    "balance",
+    "progression",
+    "content_repetition",
+    "ui_onboarding",
+    "content_missing",
+    "story_logic",
+    "content_volume",
+}
 
 GENERIC_ISSUE_ASPECTS = [
     IssueAspect(
@@ -1493,8 +1503,9 @@ def _build_issue_card(
     )
     aspect_spec = _issue_aspect_spec(aspect, app_id, aspects)
     top_terms = _issue_top_terms(members)
-    title = _issue_title(aspect_spec, intent)
-    summary = _issue_summary(aspect_spec, intent, members, positive_ratio)
+    focus_rule = _issue_focus_rule(evidence_units or members, aspect)
+    title = _issue_title(aspect_spec, intent, focus_rule)
+    summary = _issue_summary(aspect_spec, intent, members, positive_ratio, focus_rule)
     return {
         "title": title,
         "summary": summary,
@@ -1514,8 +1525,15 @@ def _build_issue_card(
         "positive_ratio": positive_ratio,
         "language_counts": dict(language_counts),
         "top_terms": top_terms,
-        "why_it_matters": _issue_why_it_matters(aspect_spec, intent, len(unique_review_ids), top_terms),
-        "recommended_action": aspect_spec.recommended_action,
+        "why_it_matters": _issue_why_it_matters(aspect_spec, intent, len(unique_review_ids), top_terms, focus_rule),
+        "recommended_action": _issue_recommended_action(
+            aspect_spec,
+            intent,
+            evidence_units,
+            top_terms,
+            focus_rule,
+            positive_ratio,
+        ),
         "warnings": warnings,
         "source": "deterministic_issue_rules",
         "model": None,
@@ -1926,34 +1944,127 @@ def _issue_aspect_spec(aspect: str, app_id: str | None, aspects: list[IssueAspec
     )
 
 
-def _issue_title(aspect: IssueAspect, intent: str) -> str:
+def _issue_focus_rule(members: list[dict[str, Any]], aspect_key: str) -> ClaimAxisRule | None:
+    rule = _claim_axis_rule_for_members(members, strict=True)
+    if not rule:
+        return None
+    if aspect_key in BROAD_FALLBACK_ISSUE_ASPECT_KEYS:
+        return rule
+    return rule if aspect_key not in rule.target_axis_keys else None
+
+
+def _issue_title(aspect: IssueAspect, intent: str, focus_rule: ClaimAxisRule | None = None) -> str:
+    label = focus_rule.label if focus_rule else aspect.label
     suffix = {
         "bug": "문제",
         "complaint": "불만",
         "request": "개선 요청",
-        "praise": "강점",
+        "praise": "활용 포인트",
     }.get(intent, "신호")
-    return f"{aspect.label} {suffix}"
+    return f"{label} {suffix}"
 
 
-def _issue_summary(aspect: IssueAspect, intent: str, members: list[dict[str, Any]], positive_ratio: float) -> str:
+def _issue_summary(
+    aspect: IssueAspect,
+    intent: str,
+    members: list[dict[str, Any]],
+    positive_ratio: float,
+    focus_rule: ClaimAxisRule | None = None,
+) -> str:
     intent_label = {
         "bug": "버그/성능 문제",
         "complaint": "불만",
         "request": "개선 요청",
         "praise": "호평",
     }.get(intent, "의견")
+    focus_label = focus_rule.label if focus_rule else aspect.label
+    focus_text = ""
+    if focus_rule:
+        focus_text = f" {aspect.label} 축 안에서 더 구체적인 {focus_label} 신호로 좁혔습니다."
     return (
         f"{len({unit['review_id'] for unit in members})}개 리뷰의 {len(members)}개 문장에서 "
-        f"{aspect.label} 관련 {intent_label}이 반복됩니다. 추천 비율은 {positive_ratio:.0%}입니다."
+        f"{focus_label} 관련 {intent_label}이 반복됩니다.{focus_text} 추천 비율은 {positive_ratio:.0%}입니다."
     )
 
 
-def _issue_why_it_matters(aspect: IssueAspect, intent: str, unique_reviews: int, top_terms: list[str]) -> str:
+def _issue_why_it_matters(
+    aspect: IssueAspect,
+    intent: str,
+    unique_reviews: int,
+    top_terms: list[str],
+    focus_rule: ClaimAxisRule | None = None,
+) -> str:
     terms = ", ".join(top_terms[:4]) if top_terms else "반복 표현 부족"
+    if focus_rule:
+        if intent == "praise":
+            return f"{focus_rule.definition} {unique_reviews}개 리뷰에서 강점 근거로 반복되며, {focus_rule.why_actionable} 대표 표현은 {terms}입니다."
+        return f"{focus_rule.definition} {unique_reviews}개 리뷰에서 근거로 반복되며, {focus_rule.why_actionable} 대표 표현은 {terms}입니다."
     if intent == "praise":
         return f"{aspect.summary} {unique_reviews}개 리뷰에서 강점으로 반복되며, 대표 표현은 {terms}입니다."
     return f"{aspect.summary} {unique_reviews}개 리뷰에서 반복되며, 대표 표현은 {terms}입니다."
+
+
+def _issue_recommended_action(
+    aspect: IssueAspect,
+    intent: str,
+    evidence_units: list[dict[str, Any]],
+    top_terms: list[str],
+    focus_rule: ClaimAxisRule | None,
+    positive_ratio: float,
+) -> str:
+    action_type = _issue_action_type(aspect, intent, evidence_units, top_terms, focus_rule, positive_ratio)
+    base_action = focus_rule.why_actionable if focus_rule else aspect.recommended_action
+    terms = ", ".join(top_terms[:3])
+    evidence_note = f" 대표 표현({terms})과 연결된 근거를 먼저 대조하세요." if terms else " 연결된 근거를 먼저 대조하세요."
+    return f"추천 액션({action_type}): {base_action}{evidence_note}"
+
+
+def _issue_action_type(
+    aspect: IssueAspect,
+    intent: str,
+    evidence_units: list[dict[str, Any]],
+    top_terms: list[str],
+    focus_rule: ClaimAxisRule | None,
+    positive_ratio: float,
+) -> str:
+    if intent == "bug":
+        return "수정"
+    if intent == "request":
+        return "개선/확장"
+    if intent == "praise":
+        return "홍보 문구/확장" if _has_marketing_copy_signal(evidence_units, top_terms, focus_rule) else "유지/확장"
+    if positive_ratio >= 0.65:
+        return "소통/기대 관리"
+    focus_key = focus_rule.key if focus_rule else aspect.key
+    if focus_key in {"update_completion", "ending_afterstory", "localization_readability"}:
+        return "소통/수정"
+    if focus_key in {"character_art", "mystery_logic", "route_guidance"}:
+        return "개선/확장"
+    return "수정/완화"
+
+
+def _has_marketing_copy_signal(
+    evidence_units: list[dict[str, Any]],
+    top_terms: list[str],
+    focus_rule: ClaimAxisRule | None,
+) -> bool:
+    if focus_rule and focus_rule.key in {"character_art", "ending_afterstory"}:
+        return True
+    text = " ".join(
+        [
+            " ".join(top_terms),
+            " ".join(str(unit.get("unit_text") or "") for unit in evidence_units[:8]),
+        ]
+    )
+    return bool(
+        re.search(
+            r"recommend|recommended|love|amazing|awesome|best|art|music|character|story|"
+            r"추천|강추|최고|명작|갓겜|캐릭터|일러|음악|스토리|연출|"
+            r"おすすめ|最高|キャラ|音楽|好评|推荐|角色|音乐",
+            text,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _issue_top_terms(members: list[dict[str, Any]], limit: int = 8) -> list[str]:

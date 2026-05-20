@@ -16,6 +16,97 @@ with tempfile.TemporaryDirectory() as tmpdir:
 
     from fastapi.testclient import TestClient
     from backend.app.main import app
+    from backend.app.analysis import IssueAspect, _build_issue_card
+
+    def issue_unit(review_id, text, intent, aspect, voted_up=False):
+        return {
+            "review": {"weighted_vote_score": 0.8},
+            "review_id": review_id,
+            "unit_text": text,
+            "language": "en",
+            "voted_up": voted_up,
+            "intent": intent,
+            "aspect": aspect,
+            "quality_score": 0.9,
+            "text_hash": f"hash-{review_id}",
+        }
+
+    content_aspect = IssueAspect(
+        "content_volume",
+        "분량/완성도",
+        r"content|route|ending",
+        "플레이 분량과 완성도 신호입니다.",
+        "가격/분량 기대와 실제 플레이 루프를 나눠 확인하세요.",
+    )
+    route_card = _build_issue_card(
+        "content_volume",
+        "complaint",
+        [
+            issue_unit(
+                "route-1",
+                "The route choice needs a clearer guide and manual save support.",
+                "complaint",
+                "content_volume",
+            ),
+            issue_unit(
+                "route-2",
+                "Ending route hints are missing, so I needed a walkthrough and save slots.",
+                "complaint",
+                "content_volume",
+            ),
+            issue_unit(
+                "route-3",
+                "Choices and gallery unlock routes are hard to track without a guide.",
+                "complaint",
+                "content_volume",
+            ),
+        ],
+        None,
+        1000,
+        [content_aspect],
+    )
+    assert route_card["title"].startswith("루트/선택지 안내와 세이브 편의")
+    assert "추천 액션(개선/확장)" in route_card["recommended_action"]
+
+    story_aspect = IssueAspect(
+        "story_logic",
+        "스토리/세계관/엔딩",
+        r"story|character|art",
+        "스토리와 캐릭터 신호입니다.",
+        "강점이면 후속작과 홍보의 핵심 약속으로 쓸 수 있는지 확인하세요.",
+    )
+    praise_card = _build_issue_card(
+        "story_logic",
+        "praise",
+        [
+            issue_unit(
+                "praise-1",
+                "The character art and music are amazing, easy to recommend.",
+                "praise",
+                "story_logic",
+                True,
+            ),
+            issue_unit(
+                "praise-2",
+                "I love the characters, visual art, and voice acting.",
+                "praise",
+                "story_logic",
+                True,
+            ),
+            issue_unit(
+                "praise-3",
+                "Great story presentation with memorable character CG and music.",
+                "praise",
+                "story_logic",
+                True,
+            ),
+        ],
+        None,
+        1000,
+        [story_aspect],
+    )
+    assert praise_card["title"].startswith("캐릭터/아트/연출 매력")
+    assert "추천 액션(홍보 문구/확장)" in praise_card["recommended_action"]
 
     with TestClient(app) as client:
         read_checks = [
