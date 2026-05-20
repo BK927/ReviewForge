@@ -30,6 +30,8 @@ Current deterministic code may still use fallback clustering and rule-based issu
 - Complaint, bug, request, and praise cards must not swap evidence polarity. Pure praise should not become complaint evidence, and pure complaint should not become praise evidence.
 - Do not present heuristic `confidence` as a statistical probability. In planner-facing UI, prefer evidence strength, verified evidence counts, verdict distribution, and language coverage.
 - Insight cards should be explorable in place. A user should be able to move from a card to subissues, verified evidence, partial/rejected evidence, and source-review context without guessing which separate page to open.
+- Cluster labels are a diagnostic aid, not final insight titles. Game-specific themes should be preferred when available, broad/common themes need visible source and strength metadata, and genre-inappropriate labels should fall back to conservative keyword diagnostics instead of sounding certain.
+- Raw cluster diagnostics should not be a first-class planner screen. Planner-facing surfaces should start from evidence-backed insight cards, source reviews, subissues, and recommended planning actions. Automatic grouping outputs may remain available for backend debugging or advanced audit workflows, but they should not be presented as the product answer.
 
 ## Documentation Contract
 
@@ -38,6 +40,7 @@ Documentation is part of the development harness. Code changes should update doc
 - API routes, request fields, or response semantics.
 - Analysis pipeline behavior, fallback order, verifier rules, or evidence requirements.
 - Product intent, UX wording policy, or planner workflow assumptions.
+- Research hypotheses, rejected approaches, user feedback, or evaluation criteria for review-analysis quality.
 - Local run, check, setup, or dependency instructions.
 
 If code needs to intentionally break one of these documented rules, ask first. After approval, update this document or the more specific docs in the same change.

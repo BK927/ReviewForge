@@ -109,6 +109,10 @@ with tempfile.TemporaryDirectory() as tmpdir:
         cluster_payload = client.get("/api/clusters").json()
         assert cluster_payload[0]["top_keywords"]
         assert cluster_payload[0]["keyword_method"] in {"ctfidf", "frequency"}
+        assert cluster_payload[0]["label_source"] in {"game_theme", "common_theme", "keyword", "fallback"}
+        assert cluster_payload[0]["label_confidence"] in {"high", "medium", "low"}
+        assert isinstance(cluster_payload[0]["label_warnings"], list)
+        assert isinstance(cluster_payload[0]["matched_terms"], list)
         assert cluster_payload[0]["insight"]["source"] == "deterministic"
         sampled_reviews = client.get(f"/api/clusters/{cluster_id}/reviews?sample=complaint&limit=5")
         sampled_reviews.raise_for_status()

@@ -162,7 +162,6 @@ select:focus-visible {
 }
 
 .nav-item:hover,
-.cluster-node:hover,
 .icon-button:hover,
 .ghost-button:hover {
   background: var(--surface-2);
@@ -350,7 +349,6 @@ select:focus-visible {
 .panel,
 .kpi,
 .metric,
-.cluster-node,
 .issue-card,
 .step-card {
   min-width: 0;
@@ -1055,26 +1053,10 @@ h3 {
   font-weight: 900;
 }
 
-.cluster-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 12px;
-}
-
 .issue-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
   gap: 12px;
-}
-
-.cluster-node {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-  padding: 16px;
-  color: inherit;
-  text-align: left;
-  overflow-wrap: anywhere;
 }
 
 .issue-card {
@@ -1086,13 +1068,11 @@ h3 {
   text-align: left;
 }
 
-.cluster-node.active,
 .issue-card.active {
   border-color: rgba(50, 211, 173, 0.55);
   background: var(--accent-soft);
 }
 
-.cluster-node header,
 .issue-card header,
 .review-sample .sample-meta,
 .priority-list li {
@@ -1103,13 +1083,11 @@ h3 {
   min-width: 0;
 }
 
-.cluster-node h3,
 .detail-head h2 {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.cluster-node p,
 .issue-card p,
 .step-card p,
 .review-sample p,
@@ -1172,14 +1150,8 @@ h3 {
   font-size: 11px;
 }
 
-.cluster-detail,
-.issue-detail,
-.cluster-diagnostics {
+.issue-detail {
   padding: 18px;
-}
-
-.cluster-diagnostics {
-  margin-top: 18px;
 }
 
 .cluster-insight-grid {
@@ -1209,10 +1181,6 @@ h3 {
   color: var(--ink);
   font-size: 13px;
   line-height: 1.45;
-}
-
-.cluster-detail .review-samples {
-  padding: 16px 0 0;
 }
 
 .issue-detail .review-samples {
@@ -1668,7 +1636,6 @@ svg {
   .event-guide,
   .cluster-insight-grid,
   .evidence-brief,
-  .cluster-grid,
   .issue-grid,
   .project-flow {
     grid-template-columns: 1fr;

@@ -31,6 +31,19 @@ class Theme:
 
 
 @dataclass(frozen=True)
+class ThemeMatch:
+    theme: Theme
+    source: str
+    count: int
+    support_review_count: int
+    coverage: float
+    matched_terms: list[str]
+    confidence: str
+    warnings: list[str]
+    accepted: bool
+
+
+@dataclass(frozen=True)
 class AnalysisPipelineResult:
     reviews_analyzed: int
     clusters_created: int
@@ -149,6 +162,29 @@ GAME_THEMES: dict[str, list[Theme]] = {
         Theme("rng", "운과 밸런스", r"rng|luck|random|balance|joker|seed|운빨|밸런스", "랜덤성, 조커 조합, 밸런스에 대한 의견입니다."),
         Theme("difficulty", "난이도와 진척", r"difficulty|hard|ante|stake|progress|난이도|어려", "난이도 곡선과 진행 체감에 대한 반응입니다."),
     ],
+    "1859910": [
+        Theme("update_completion", "업데이트와 완성도 기대", r"update|unfinished|incomplete|early access|route|ending|chapter|更新|画饼|文本|未完成|路线|结局|업데이트|미완성|루트|엔딩|분기|텍스트|회차", "업데이트 약속, 완성도, 분기/엔딩/텍스트 추가 기대가 함께 언급됩니다."),
+        Theme("route_guidance", "분기와 공략 의존", r"hint|guide|walkthrough|choice|choices|route|ending|gallery|힌트|공략|선택지|분기|루트|엔딩|도감|暗示|攻略|选择|路线|结局|图鉴", "분기 조건, 힌트 부족, 공략 의존, 엔딩 접근성 의견이 모입니다."),
+        Theme("martial_story", "무협 서사와 인물 매력", r"martial|wuxia|heroine|character|story|route|무협|협객|히로인|캐릭터|스토리|서사|剧情|武侠|侠客|女主|角色|人设|故事", "무협 분위기, 인물 매력, 루트별 서사에 대한 반응입니다."),
+    ],
+    "3101040": [
+        Theme("mystery_logic", "추리/재판/마법 규칙", r"mystery|deduction|logic|trick|magic|case|danganronpa|trial|reasoning|추리|논리|트릭|마법|재판|단간|개연성|억지|推理|逻辑|诡计|魔法|审判|弹丸|裁判", "추리 파트, 재판 전개, 마법 규칙, 트릭 납득감이 주요 평가 포인트로 반복됩니다."),
+        Theme("chapter_replay", "챕터/회차 편의", r"chapter|chapter select|replay|skip|save|one more|周目|チャプター|もう一周|챕터|회차|스킵|저장|다시", "챕터 선택, 재플레이, 회상/스킵 같은 장문 서사 게임의 반복 플레이 편의 신호입니다."),
+        Theme("character_voice", "캐릭터/연출/더빙", r"character|voice|acting|design|cg|art|캐릭터|캐디|더빙|성우|디자인|일러|연출|角色|配音|人设|立绘|演出|キャラ|ボイス", "캐릭터 디자인, 더빙, 연출이 만족도와 구매 이유로 언급됩니다."),
+    ],
+    "1456820": [
+        Theme("short_content", "짧은 분량과 엔딩 반복", r"short|too short|content|volume|ending|endings|replay|less than|hour|분량|짧|컨텐츠|콘텐츠|볼륨|엔딩|다회차|1시간|ボリューム|短い|エンディング|结局|内容少", "짧은 플레이타임, 엔딩 반복, 콘텐츠 볼륨에 대한 반응입니다."),
+        Theme("weapon_card_rng", "무기/카드 RNG", r"weapon|weapons|card|cards|rng|random|luck|durability|shotgun|grenade|무기|카드|운|랜덤|내구도|샷건|유탄|武器|カード|運|ランダム|耐久|霰弹枪", "무기 카드, 랜덤 제시, 내구도, 빌드 선택의 운 의존 신호입니다."),
+        Theme("bleak_ending_tone", "엔딩 톤과 구원감", r"ending|endings|bad end|good end|救い|虚無|暗い|엔딩|배드엔딩|굿엔딩|구원|허무|우울|结局|坏结局", "엔딩의 어두운 톤, 구원감 부족, 결말 만족도에 대한 반응입니다."),
+    ],
+}
+
+ACTION_THEME_KEYS = {"combat", "balance"}
+APP_BLOCKED_GLOBAL_THEME_KEYS: dict[str, set[str]] = {
+    "3101040": ACTION_THEME_KEYS,
+}
+APP_BLOCKED_GENERIC_ASPECT_KEYS: dict[str, set[str]] = {
+    "3101040": {"balance"},
 }
 
 GENERIC_ISSUE_ASPECTS = [
@@ -1358,6 +1394,7 @@ def _active_issue_aspects(app_id: str | None) -> list[IssueAspect]:
                 conn.execute(
                     """
                     SELECT key, label, pattern, description, recommended_action
+                         , scope
                     FROM analysis_axes
                     WHERE status = 'active'
                       AND (scope IN ('common', 'genre') OR app_id = ?)
@@ -1379,14 +1416,23 @@ def _active_issue_aspects(app_id: str | None) -> list[IssueAspect]:
             recommended_action=str(row["recommended_action"]),
         )
         for row in rows
+        if _issue_aspect_allowed(resolved_app_id, str(row["key"]), str(row.get("scope") or "common"))
     ]
     seen = {aspect.key for aspect in db_aspects}
-    fallback = [
-        aspect
-        for aspect in [*GAME_ISSUE_ASPECTS.get(resolved_app_id, []), *GENERIC_ISSUE_ASPECTS]
-        if aspect.key not in seen
-    ]
+    fallback: list[IssueAspect] = []
+    for aspect in GAME_ISSUE_ASPECTS.get(resolved_app_id, []):
+        if aspect.key not in seen:
+            fallback.append(aspect)
+    for aspect in GENERIC_ISSUE_ASPECTS:
+        if aspect.key not in seen and _issue_aspect_allowed(resolved_app_id, aspect.key, "common"):
+            fallback.append(aspect)
     return [*db_aspects, *fallback]
+
+
+def _issue_aspect_allowed(app_id: str, aspect_key: str, scope: str) -> bool:
+    if scope == "game":
+        return True
+    return aspect_key not in APP_BLOCKED_GENERIC_ASPECT_KEYS.get(app_id, set())
 
 
 def _safe_pattern_count(pattern: str, text: str) -> int:
@@ -2308,21 +2354,51 @@ def _cluster_with_sklearn(
     return [_describe_group(members, app_id, quality_by_id) for members in grouped.values()]
 
 
+def _theme_candidates_for_app(app_id: str | None) -> list[tuple[Theme, str]]:
+    app_id_str = str(app_id or "")
+    blocked_global_keys = APP_BLOCKED_GLOBAL_THEME_KEYS.get(app_id_str, set())
+    candidates: list[tuple[Theme, str]] = []
+    seen_keys: set[str] = set()
+    for theme in GAME_THEMES.get(app_id_str, []):
+        candidates.append((theme, "game_theme"))
+        seen_keys.add(theme.key)
+    for theme in THEMES:
+        if theme.key in seen_keys or theme.key in blocked_global_keys:
+            continue
+        candidates.append((theme, "common_theme"))
+        seen_keys.add(theme.key)
+    return candidates
+
+
+def _theme_pattern_matches(theme: Theme, text: str) -> list[str]:
+    matches = re.findall(theme.pattern, text, flags=re.IGNORECASE)
+    terms: list[str] = []
+    for match in matches:
+        raw = " ".join(str(part) for part in match if part) if isinstance(match, tuple) else str(match)
+        cleaned = _clean_keyword(raw)
+        if cleaned:
+            terms.append(cleaned)
+    return terms
+
+
 def _cluster_with_keywords(
     reviews: list[dict[str, Any]],
     app_id: str | None,
     quality_by_id: dict[str, ReviewQuality],
 ) -> list[dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    themes = [*GAME_THEMES.get(str(app_id or ""), []), *THEMES]
+    themes = _theme_candidates_for_app(app_id)
     for row in reviews:
         text = str(row.get("review") or "").lower()
-        matches = [(theme, len(re.findall(theme.pattern, text, flags=re.IGNORECASE))) for theme in themes]
-        theme, count = max(matches, key=lambda item: item[1])
+        matches = [
+            (theme, source, len(_theme_pattern_matches(theme, text)))
+            for theme, source in themes
+        ]
+        theme, source, count = max(matches, key=lambda item: item[2])
         if count <= 0:
             grouped["misc"].append({"row": row, "score": 0.55, "quality": quality_by_id.get(str(row["recommendation_id"]))})
         else:
-            grouped[theme.key].append({
+            grouped[f"{source}:{theme.key}"].append({
                 "row": row,
                 "score": min(1.0, 0.62 + count * 0.12),
                 "quality": quality_by_id.get(str(row["recommendation_id"])),
@@ -2337,15 +2413,24 @@ def _describe_group(
 ) -> dict[str, Any]:
     rows = [member["row"] for member in members]
     sentiment = _sentiment(rows)
-    best_theme = _best_theme(rows, app_id)
+    theme_match = _best_theme(rows, app_id)
     keywords = _keywords(rows)
     language = _dominant_language(rows)
     positive_ratio = _positive_ratio(rows)
     quality_warning = _quality_warning(rows, quality_by_id)
-    if best_theme:
-        label = best_theme.label
-        label_source = "theme"
-        summary = f"{len(rows)}개 리뷰에서 {best_theme.summary} 긍정 비율은 {positive_ratio:.0%}입니다."
+    label_warnings = list(theme_match.warnings) if theme_match else []
+    if quality_warning:
+        label_warnings.append(quality_warning)
+    matched_terms = theme_match.matched_terms if theme_match else []
+    matched_theme_key = theme_match.theme.key if theme_match else None
+    if theme_match and theme_match.accepted:
+        label = theme_match.theme.label
+        label_source = theme_match.source
+        label_confidence = theme_match.confidence
+        summary = (
+            f"{len(rows)}개 리뷰 중 {theme_match.support_review_count}개에서 "
+            f"{theme_match.theme.summary} 추천 비율은 {positive_ratio:.0%}입니다."
+        )
     else:
         if sentiment == "positive":
             label = "긍정 경험 묶음"
@@ -2355,9 +2440,12 @@ def _describe_group(
             label = "혼합 의견 묶음"
         if keywords:
             label = f"{keywords[0]} 중심 의견"
-        label_source = "keyword"
+        label_source = "keyword" if keywords else "fallback"
+        label_confidence = "low"
+        label_warnings.append("테마 확정이 아니라 키워드 기반 진단 라벨입니다. 기획 판단은 인사이트 보드와 근거 리뷰를 우선 확인하세요.")
         keyword_text = ", ".join(keywords[:4]) if keywords else "공통 표현 부족"
         summary = f"{len(rows)}개 리뷰가 유사한 표현으로 묶였습니다. 주요 단어는 {keyword_text}이며 긍정 비율은 {_positive_ratio(rows):.0%}입니다."
+    label_warnings = _unique_strings(label_warnings)
     return {
         "label": label,
         "summary": summary,
@@ -2367,6 +2455,10 @@ def _describe_group(
         "keywords": keywords,
         "keyword_method": "frequency",
         "label_source": label_source,
+        "label_confidence": label_confidence,
+        "label_warnings": label_warnings,
+        "matched_theme_key": matched_theme_key,
+        "matched_terms": matched_terms,
         "positive_ratio": positive_ratio,
         "quality_warning": quality_warning,
     }
@@ -2458,6 +2550,18 @@ def _distinct_keywords(ranked_terms: list[tuple[str, float]], limit: int) -> lis
     return selected
 
 
+def _unique_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        unique.append(text)
+    return unique
+
+
 def _clean_keyword(term: str) -> str:
     compact = re.sub(r"\s+", " ", term.casefold()).strip(" '\".,!?;:()[]{}")
     return compact
@@ -2514,21 +2618,22 @@ def _deterministic_cluster_insight(group: dict[str, Any], app_id: str | None) ->
     title = str(group["label"])
     warning = group.get("quality_warning")
     keyword_text = ", ".join(group.get("keywords") or [])
-    sentiment_text = "호평" if positive_ratio >= 0.65 else "불만" if positive_ratio <= 0.45 else "호평과 불만이 섞인 반응"
-    summary = (
-        f"{len(rows)}개 품질 필터 통과 리뷰에서 {title} 관련 {sentiment_text}이 관측됩니다. "
-        f"추천 비율은 {positive_ratio:.0%}입니다."
-    )
-    if keyword_text:
+    label_warnings = list(group.get("label_warnings") or [])
+    summary = str(group.get("summary") or "").strip()
+    if not summary:
+        summary = f"{len(rows)}개 리뷰가 {title} 라벨로 묶였습니다. 추천 비율은 {positive_ratio:.0%}입니다."
+    if keyword_text and "주요" not in summary:
         summary += f" 주요 표현은 {keyword_text}입니다."
+    if group.get("label_source") in {"keyword", "fallback"}:
+        summary += " 이 라벨은 진단용이므로 실제 기획 판단은 인사이트 보드와 원문 근거를 우선하세요."
 
     praise = f"{title}을 긍정적으로 언급한 리뷰가 있습니다." if positive_ratio > 0 else ""
     pain_point = f"{title}에 대한 불만 또는 주의 신호가 있습니다." if positive_ratio < 1 else ""
     planner_action = _planner_action_for(title, positive_ratio, app_id)
     marketing_angle = f"{title} 관련 호평은 스토어 문구나 패치 노트에서 강점 근거로 검토할 수 있습니다."
-    warnings = [warning] if warning else []
+    warnings = _unique_strings(([warning] if warning else []) + label_warnings)
     confidence = 0.7
-    if warning:
+    if warnings:
         confidence -= 0.15
     if len(rows) < 30:
         confidence -= 0.1
@@ -3038,9 +3143,10 @@ def _store_analysis_outputs(
             INSERT INTO clusters (
                 analysis_run_id, label, summary, sentiment, language, review_count,
                 avg_weighted_score, exemplar_review_id, positive_ratio, top_keywords,
-                keyword_method, quality_warning
+                keyword_method, quality_warning, label_source, label_confidence,
+                label_warnings, matched_theme_key, matched_terms
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
             """,
             [
                 analysis_run_id,
@@ -3055,6 +3161,11 @@ def _store_analysis_outputs(
                 json.dumps(group["keywords"]),
                 group.get("keyword_method"),
                 group["quality_warning"],
+                group.get("label_source"),
+                group.get("label_confidence"),
+                json.dumps(group.get("label_warnings") or []),
+                group.get("matched_theme_key"),
+                json.dumps(group.get("matched_terms") or []),
             ],
         ).fetchone()[0]
         _insert_cluster_insight(conn, cluster_id, insight)
@@ -3262,12 +3373,88 @@ def _rank_members(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(ranked, key=lambda item: item["representative_score"], reverse=True)
 
 
-def _best_theme(rows: list[dict[str, Any]], app_id: str | None = None) -> Theme | None:
-    text = "\n".join(str(row.get("review") or "").lower() for row in rows)
-    themes = [*GAME_THEMES.get(str(app_id or ""), []), *THEMES]
-    counts = [(theme, len(re.findall(theme.pattern, text, flags=re.IGNORECASE))) for theme in themes]
-    theme, count = max(counts, key=lambda item: item[1])
-    return theme if count > 0 else None
+def _best_theme(rows: list[dict[str, Any]], app_id: str | None = None) -> ThemeMatch | None:
+    if not rows:
+        return None
+    candidates: list[ThemeMatch] = []
+    total = len(rows)
+    for theme, source in _theme_candidates_for_app(app_id):
+        term_counter: Counter[str] = Counter()
+        support_review_count = 0
+        for row in rows:
+            matches = _theme_pattern_matches(theme, str(row.get("review") or "").lower())
+            if not matches:
+                continue
+            support_review_count += 1
+            term_counter.update(matches)
+        count = sum(term_counter.values())
+        if count <= 0:
+            continue
+        coverage = support_review_count / total
+        accepted, confidence, warnings = _theme_acceptance(theme, source, support_review_count, coverage, total)
+        candidates.append(
+            ThemeMatch(
+                theme=theme,
+                source=source,
+                count=count,
+                support_review_count=support_review_count,
+                coverage=coverage,
+                matched_terms=[term for term, _count in term_counter.most_common(6)],
+                confidence=confidence,
+                warnings=warnings,
+                accepted=accepted,
+            )
+        )
+    if not candidates:
+        return None
+    accepted_candidates = [candidate for candidate in candidates if candidate.accepted]
+    pool = accepted_candidates or candidates
+    return sorted(
+        pool,
+        key=lambda item: (
+            item.source == "game_theme",
+            item.support_review_count,
+            item.coverage,
+            item.count,
+        ),
+        reverse=True,
+    )[0]
+
+
+def _theme_acceptance(
+    theme: Theme,
+    source: str,
+    support_review_count: int,
+    coverage: float,
+    total_reviews: int,
+) -> tuple[bool, str, list[str]]:
+    if source == "game_theme":
+        min_support = 2 if total_reviews < 50 else 3
+        min_coverage = 0.05
+    else:
+        min_support = 2 if total_reviews < 20 else 3 if total_reviews < 80 else 5
+        min_coverage = 0.10
+
+    if source == "common_theme" and theme.key in ACTION_THEME_KEYS:
+        min_support = max(min_support, 4)
+        min_coverage = 0.18
+
+    warnings: list[str] = []
+    accepted = support_review_count >= min_support and coverage >= min_coverage
+    if not accepted:
+        warnings.append(
+            f"{theme.label} 관련 표현이 {support_review_count}개 리뷰에서만 보여 확정 라벨로 쓰지 않았습니다."
+        )
+        return False, "low", warnings
+
+    if source == "common_theme":
+        warnings.append("공통 테마 라벨입니다. 게임 고유 맥락은 인사이트 보드의 근거로 다시 확인하세요.")
+    if source == "common_theme" and theme.key in ACTION_THEME_KEYS:
+        warnings.append("액션/전투 공통 테마는 직접 표현이 충분할 때만 붙인 진단 라벨입니다.")
+
+    high_threshold = 0.18 if source == "game_theme" else 0.25
+    confidence = "high" if support_review_count >= 8 and coverage >= high_threshold else "medium"
+    return True, confidence, warnings
 
 
 def _quality_warning(rows: list[dict[str, Any]], quality_by_id: dict[str, ReviewQuality]) -> str | None:

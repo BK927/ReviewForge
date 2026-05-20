@@ -78,6 +78,11 @@ CREATE TABLE IF NOT EXISTS clusters (
     top_keywords JSON,
     keyword_method VARCHAR,
     quality_warning VARCHAR,
+    label_source VARCHAR,
+    label_confidence VARCHAR,
+    label_warnings JSON,
+    matched_theme_key VARCHAR,
+    matched_terms JSON,
     created_at TIMESTAMP NOT NULL DEFAULT current_timestamp
 );
 
@@ -335,6 +340,11 @@ def run_migrations(conn: duckdb.DuckDBPyConnection) -> None:
     _add_column_if_missing(conn, "clusters", "top_keywords", "JSON")
     _add_column_if_missing(conn, "clusters", "keyword_method", "VARCHAR")
     _add_column_if_missing(conn, "clusters", "quality_warning", "VARCHAR")
+    _add_column_if_missing(conn, "clusters", "label_source", "VARCHAR")
+    _add_column_if_missing(conn, "clusters", "label_confidence", "VARCHAR")
+    _add_column_if_missing(conn, "clusters", "label_warnings", "JSON")
+    _add_column_if_missing(conn, "clusters", "matched_theme_key", "VARCHAR")
+    _add_column_if_missing(conn, "clusters", "matched_terms", "JSON")
     _add_column_if_missing(conn, "cluster_insights", "source", "VARCHAR")
     _add_column_if_missing(conn, "cluster_insights", "model", "VARCHAR")
     _add_column_if_missing(conn, "evidence", "analysis_run_id", "BIGINT")
@@ -465,7 +475,7 @@ def _primary_app_id(conn: duckdb.DuckDBPyConnection) -> str:
 
 def ensure_games_seeded(conn: duckdb.DuckDBPyConnection) -> None:
     app_ids = [str(row[0]) for row in conn.execute("SELECT DISTINCT app_id FROM reviews ORDER BY app_id").fetchall()]
-    if get_settings().steam_app_id not in app_ids:
+    if not app_ids and get_settings().steam_app_id not in app_ids:
         app_ids.append(get_settings().steam_app_id)
     now = utcnow()
     for app_id in app_ids:

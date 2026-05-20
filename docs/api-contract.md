@@ -131,6 +131,18 @@ clusters, evidence, and generated reports are linked to `analysis_run_id`;
 `GET /api/clusters` and `GET /api/evidence` prefer the latest completed run
 while still tolerating seed data.
 
+Cluster labels are diagnostic grouping labels, not final planning insights.
+`GET /api/clusters` returns label audit metadata so the UI can show when a
+cluster name is reliable enough to inspect and when the issue board should be
+trusted first:
+
+- `label_source`: `game_theme`, `common_theme`, `keyword`, or `fallback`.
+- `label_confidence`: `high`, `medium`, or `low`; this is a heuristic label
+  strength, not a statistical probability.
+- `label_warnings`: reasons the label should be treated carefully.
+- `matched_theme_key`: the selected theme key when a theme was considered.
+- `matched_terms`: review expressions that supported the theme match.
+
 `GET /api/timeline` accepts `app_id`, `bucket=day|week|month`, `language`,
 `playtime_min`, and `playtime_max`.
 

@@ -117,6 +117,11 @@ class Cluster(BaseModel):
     top_keywords: list[str] = Field(default_factory=list)
     keyword_method: str | None = None
     quality_warning: str | None = None
+    label_source: str | None = None
+    label_confidence: str | None = None
+    label_warnings: list[str] = Field(default_factory=list)
+    matched_theme_key: str | None = None
+    matched_terms: list[str] = Field(default_factory=list)
     insight: dict[str, Any] | None = None
     created_at: datetime
 

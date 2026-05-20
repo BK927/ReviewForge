@@ -1479,6 +1479,8 @@ def _loads_list(value: Any) -> list[str]:
 
 def _hydrate_cluster_row(row: dict[str, Any]) -> dict[str, Any]:
     top_keywords = _loads_list(row.get("top_keywords"))
+    label_warnings = _loads_list(row.get("label_warnings"))
+    matched_terms = _loads_list(row.get("matched_terms"))
     warnings = _loads_list(row.get("warnings"))
     insight = None
     if row.get("insight_title") or row.get("insight_summary"):
@@ -1509,6 +1511,8 @@ def _hydrate_cluster_row(row: dict[str, Any]) -> dict[str, Any]:
             row.pop(key, None)
     row.pop("warnings", None)
     row["top_keywords"] = top_keywords
+    row["label_warnings"] = label_warnings
+    row["matched_terms"] = matched_terms
     row["insight"] = insight
     return row
 
