@@ -1157,6 +1157,13 @@ h3 {
   font-weight: 800;
 }
 
+.issue-card-action {
+  justify-self: start;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .cluster-tag {
   padding: 5px 7px;
   border-radius: 999px;
@@ -1210,6 +1217,83 @@ h3 {
 
 .issue-detail .review-samples {
   padding: 16px 0 0;
+}
+
+.evidence-brief {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.evidence-brief > div {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.evidence-brief strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.evidence-brief p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.subissue-list,
+.verdict-strip,
+.evidence-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.subissue-list span,
+.verdict-strip span {
+  max-width: 100%;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.subissue-list b {
+  color: var(--accent);
+}
+
+.verdict-strip .good {
+  color: var(--positive);
+  background: rgba(98, 208, 131, 0.13);
+}
+
+.verdict-strip .mixed {
+  color: var(--warning);
+  background: rgba(232, 183, 93, 0.13);
+}
+
+.verdict-strip .bad {
+  color: var(--negative);
+  background: rgba(255, 120, 120, 0.13);
+}
+
+.evidence-toolbar {
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.compact-search {
+  max-width: 360px;
 }
 
 .warning-list {
@@ -1583,6 +1667,7 @@ svg {
   .filters,
   .event-guide,
   .cluster-insight-grid,
+  .evidence-brief,
   .cluster-grid,
   .issue-grid,
   .project-flow {
@@ -1597,6 +1682,15 @@ svg {
   .cluster-tools {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .evidence-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compact-search {
+    max-width: none;
   }
 
   .library-head {

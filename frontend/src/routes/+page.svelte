@@ -58,6 +58,7 @@
   type LibraryFilter = 'all' | 'ready' | 'needs-analysis' | 'needs-sync' | 'watch';
   type ClusterToneFilter = 'all' | 'bad' | 'mixed' | 'good';
   type IssueStatusFilter = 'all' | 'confirmed' | 'needs_review' | 'strength' | 'diagnostic';
+  type IssueEvidenceFilter = 'match' | 'partial' | 'reject' | 'unverified' | 'all';
 
   type ApiDashboard = {
     total_reviews: number;
@@ -442,7 +443,7 @@
     { id: 'library', label: '게임 라이브러리', group: 'Project', icon: Library },
     { id: 'workbench', label: '분석 작업대', group: 'Project', icon: LayoutDashboard },
     { id: 'insights', label: '인사이트 보드', group: 'Analysis', icon: MessagesSquare },
-    { id: 'evidence', label: '근거 리뷰', group: 'Analysis', icon: ScanSearch },
+    { id: 'evidence', label: '근거 검증', group: 'Analysis', icon: ScanSearch },
     { id: 'axes', label: '평가축 관리', group: 'Analysis', icon: SlidersHorizontal },
     { id: 'report', label: '리포트', group: 'Analysis', icon: FileText },
     { id: 'settings', label: '실행/설정', group: 'Analysis', icon: Activity }
@@ -481,6 +482,14 @@
     { id: 'needs_review', label: '검토 필요' },
     { id: 'strength', label: '활용 포인트' },
     { id: 'diagnostic', label: '진단' }
+  ];
+
+  const issueEvidenceFilterOptions: Array<{ id: IssueEvidenceFilter; label: string }> = [
+    { id: 'match', label: '검증 통과' },
+    { id: 'partial', label: '부분 관련' },
+    { id: 'reject', label: '제외 근거' },
+    { id: 'unverified', label: '미검증' },
+    { id: 'all', label: '전체' }
   ];
 
   const emptyDashboard: ApiDashboard = {
@@ -785,6 +794,8 @@
   let clusterToneFilter: ClusterToneFilter = 'all';
   let issueQuery = '';
   let issueStatusFilter: IssueStatusFilter = 'all';
+  let issueEvidenceFilter: IssueEvidenceFilter = 'match';
+  let issueEvidenceQuery = '';
   let showRawAxisSuggestions = false;
   let showGameDialog = false;
   let showSettingsPanel = false;
@@ -832,6 +843,9 @@
   $: filteredLibraryGames = filterLibraryGames(gameProjects, libraryQuery, libraryFilter);
   $: filteredClusters = filterClusters(clusters, clusterQuery, clusterToneFilter);
   $: filteredIssues = filterIssues(issues, issueQuery, issueStatusFilter);
+  $: issueEvidenceStats = buildIssueEvidenceStats(issueEvidenceItems);
+  $: issueEvidenceSubissues = buildIssueEvidenceSubissues(issueEvidenceItems);
+  $: filteredIssueEvidenceItems = filterIssueEvidence(issueEvidenceItems, issueEvidenceFilter, issueEvidenceQuery);
   $: issueMetrics = buildIssueMetrics(issueSummary, dashboard);
   $: issueAuditRows = buildIssueAuditRows(issueSummary, dashboard);
   $: activeAxes = axes.filter((axis) => axis.status === 'active');
@@ -1236,6 +1250,8 @@
   async function loadIssueEvidence(issueId: string | number) {
     activeIssue = String(issueId);
     issueEvidenceItems = [];
+    issueEvidenceFilter = 'match';
+    issueEvidenceQuery = '';
     if (!issueId) return;
     try {
       issueEvidenceItems = await requestJson<ApiIssueEvidence[]>(`/issues/${issueId}/evidence?limit=24`);
@@ -1489,6 +1505,120 @@
         return statusMatch && (!q || text.includes(q));
       })
       .sort((a, b) => issuePriorityScore(b) - issuePriorityScore(a));
+  }
+
+  function filterIssueEvidence(items: ApiIssueEvidence[], verdictFilter: IssueEvidenceFilter, queryValue: string) {
+    const q = normalizeVisibleText(queryValue);
+    return items.filter((item) => {
+      const verdict = issueEvidenceVerdict(item.verifier_verdict);
+      const verdictMatch = verdictFilter === 'all' || verdictFilter === verdict;
+      const haystack = normalizeVisibleText(
+        `${item.summary_ko ?? ''} ${item.subissue ?? ''} ${item.quote} ${item.review_text ?? ''} ${item.language ?? ''} ${item.evidence_role}`
+      );
+      return verdictMatch && (!q || haystack.includes(q));
+    });
+  }
+
+  function issueEvidenceVerdict(value?: string | null): IssueEvidenceFilter {
+    if (value === 'match' || value === 'partial' || value === 'reject') return value;
+    return 'unverified';
+  }
+
+  function buildIssueEvidenceStats(items: ApiIssueEvidence[]) {
+    const stats = {
+      all: items.length,
+      match: 0,
+      partial: 0,
+      reject: 0,
+      unverified: 0,
+      verified: 0,
+      uniqueReviews: new Set<string>(),
+      recommended: 0,
+      notRecommended: 0,
+      languageCounts: new Map<string, number>()
+    };
+    for (const item of items) {
+      const verdict = issueEvidenceVerdict(item.verifier_verdict);
+      if (verdict === 'match') stats.match += 1;
+      if (verdict === 'partial') stats.partial += 1;
+      if (verdict === 'reject') stats.reject += 1;
+      if (verdict === 'unverified') stats.unverified += 1;
+      if (verdict !== 'unverified') stats.verified += 1;
+      if (item.review_id) stats.uniqueReviews.add(item.review_id);
+      if (item.voted_up === true) stats.recommended += 1;
+      if (item.voted_up === false) stats.notRecommended += 1;
+      const language = item.language ?? 'unknown';
+      stats.languageCounts.set(language, (stats.languageCounts.get(language) ?? 0) + 1);
+    }
+    const dominant = [...stats.languageCounts.entries()].sort((a, b) => b[1] - a[1])[0] ?? null;
+    return {
+      all: stats.all,
+      match: stats.match,
+      partial: stats.partial,
+      reject: stats.reject,
+      unverified: stats.unverified,
+      verified: stats.verified,
+      uniqueReviews: stats.uniqueReviews.size,
+      recommended: stats.recommended,
+      notRecommended: stats.notRecommended,
+      matchRate: stats.verified ? stats.match / stats.verified : null,
+      languageCount: stats.languageCounts.size,
+      dominantLanguage: dominant?.[0] ?? null,
+      dominantLanguageCount: dominant?.[1] ?? 0,
+      dominantLanguageShare: dominant && stats.all ? dominant[1] / stats.all : null
+    };
+  }
+
+  function buildIssueEvidenceSubissues(items: ApiIssueEvidence[]) {
+    const rows = new Map<string, { label: string; count: number; match: number; partial: number; reject: number; sample: string }>();
+    for (const item of items) {
+      const rawLabel = item.subissue || item.summary_ko || trimText(item.quote, 48);
+      const label = trimText(rawLabel, 64);
+      const current = rows.get(label) ?? { label, count: 0, match: 0, partial: 0, reject: 0, sample: item.summary_ko || item.quote };
+      current.count += 1;
+      const verdict = issueEvidenceVerdict(item.verifier_verdict);
+      if (verdict === 'match') current.match += 1;
+      if (verdict === 'partial') current.partial += 1;
+      if (verdict === 'reject') current.reject += 1;
+      rows.set(label, current);
+    }
+    return [...rows.values()].sort((a, b) => b.count - a.count).slice(0, 6);
+  }
+
+  function issueEvidenceFilterCount(filter: IssueEvidenceFilter, stats: ReturnType<typeof buildIssueEvidenceStats>) {
+    if (filter === 'match') return stats.match;
+    if (filter === 'partial') return stats.partial;
+    if (filter === 'reject') return stats.reject;
+    if (filter === 'unverified') return stats.unverified;
+    return stats.all;
+  }
+
+  function issueEvidenceStrengthLabel(stats: ReturnType<typeof buildIssueEvidenceStats>) {
+    if (stats.match >= 5 && (stats.matchRate ?? 0) >= 0.7) return '높음';
+    if (stats.match >= 2 || stats.partial >= 3) return '중간';
+    if (stats.all > 0) return '낮음';
+    return '대기';
+  }
+
+  function issueStrengthLabel(issue: ApiIssue) {
+    const evidence = issue.evidence_count ?? 0;
+    if (evidence >= 8 && issue.status !== 'needs_review') return '높음';
+    if (evidence >= 3) return '중간';
+    return '낮음';
+  }
+
+  function plannerActionLabel(issue: ApiIssue) {
+    if (issue.intent === 'praise') return '유지/확장/홍보 후보';
+    if (issue.intent === 'request') return '수요와 범위 검토';
+    if (issue.intent === 'bug') return '재현과 수정 검토';
+    if (issue.intent === 'complaint') return '수정/완화 검토';
+    return '관찰 후보';
+  }
+
+  function languageDominanceLabel(stats: ReturnType<typeof buildIssueEvidenceStats>) {
+    if (!stats.dominantLanguage || !stats.dominantLanguageShare) return '언어 근거 없음';
+    const label = `${steamLanguageLabel(stats.dominantLanguage)} ${formatPercent(stats.dominantLanguageShare)}`;
+    return stats.dominantLanguageShare >= 0.7 ? `${label} 편중` : label;
   }
 
   function issuePriorityScore(issue: ApiIssue) {
@@ -2927,13 +3057,15 @@
                   <div class="issue-stats">
                     <span>{formatCount(issue.unique_review_count)}개 리뷰</span>
                     <span>근거 {formatCount(issue.evidence_count ?? 0)}개</span>
-                    <span>신뢰 {formatPercent(issue.confidence)}</span>
+                    <span>근거 강도 {issueStrengthLabel(issue)}</span>
+                    <span>{plannerActionLabel(issue)}</span>
                   </div>
                   <div class="cluster-tags">
                     {#each (issue.top_terms ?? []).slice(0, 4) as term}
                       <span class="cluster-tag">{term}</span>
                     {/each}
                   </div>
+                  <span class="issue-card-action">세부 분석 열기</span>
                 </button>
               {:else}
                 <div class="empty-state">조건에 맞는 이슈가 없습니다.</div>
@@ -2951,18 +3083,42 @@
                 <div class="cluster-insight-grid">
                   <div><strong>영향 영역</strong><span>{issueAspectLabel(selectedIssue.aspect)}</span></div>
                   <div><strong>신호 유형</strong><span>{issueIntentLabel(selectedIssue.intent)}</span></div>
-                  <div><strong>우선도</strong><span>{formatPercent(selectedIssue.priority_score)}</span></div>
+                  <div><strong>근거 강도</strong><span>{issueEvidenceStrengthLabel(issueEvidenceStats)}</span></div>
                   <div><strong>추천율</strong><span>{selectedIssue.positive_ratio === null || selectedIssue.positive_ratio === undefined ? '미상' : formatPercent(selectedIssue.positive_ratio)}</span></div>
-                  <div><strong>언어 분포</strong><span>{Object.entries(selectedIssue.language_counts ?? {}).slice(0, 4).map(([lang, count]) => `${steamLanguageLabel(lang)} ${formatCount(count)}`).join(' · ') || '미상'}</span></div>
+                  <div><strong>검증 통과</strong><span>{formatCount(issueEvidenceStats.match)}개 · 일치율 {issueEvidenceStats.matchRate === null ? '미상' : formatPercent(issueEvidenceStats.matchRate)}</span></div>
+                  <div><strong>언어 분포</strong><span>{languageDominanceLabel(issueEvidenceStats)}</span></div>
                   <div><strong>분석 방식</strong><span>{insightSourceLabel(selectedIssue.source ?? null)}{selectedIssue.model ? ` · ${selectedIssue.model}` : ''}</span></div>
                 </div>
                 <div class="method-note">
                   <Info />
                   <div>
-                    <strong>기획 액션</strong>
-                    <span>{selectedIssue.recommended_action ?? '근거 리뷰를 먼저 확인한 뒤 수정/관찰/보류를 결정하세요.'}</span>
+                    <strong>{plannerActionLabel(selectedIssue)}</strong>
+                    <span>{selectedIssue.recommended_action ?? '검증 통과 근거를 먼저 보고, 부분 관련/제외 근거로 반례가 있는지 확인하세요.'}</span>
                   </div>
                 </div>
+                <section class="evidence-brief" aria-label="인사이트 근거 탐색 요약">
+                  <div>
+                    <strong>하위 의견</strong>
+                    <p>같은 카드 안에서 반복되는 세부 표현입니다. 칩을 보고 이 인사이트가 너무 넓게 묶였는지 판단합니다.</p>
+                    <div class="subissue-list">
+                      {#each issueEvidenceSubissues as row}
+                        <span>{row.label} <b>{formatCount(row.count)}</b></span>
+                      {:else}
+                        <span>하위 의견 대기</span>
+                      {/each}
+                    </div>
+                  </div>
+                  <div>
+                    <strong>검증 분포</strong>
+                    <p>AI/규칙 요약이 원문과 맞는지 보는 감사 신호입니다. 기본 목록은 검증 통과만 보여줍니다.</p>
+                    <div class="verdict-strip">
+                      <span class="good">통과 {formatCount(issueEvidenceStats.match)}</span>
+                      <span class="mixed">부분 {formatCount(issueEvidenceStats.partial)}</span>
+                      <span class="bad">제외 {formatCount(issueEvidenceStats.reject)}</span>
+                      <span>미검증 {formatCount(issueEvidenceStats.unverified)}</span>
+                    </div>
+                  </div>
+                </section>
                 {#if selectedIssue.warnings?.length}
                   <div class="warning-list">
                     {#each selectedIssue.warnings as warning}
@@ -2970,8 +3126,26 @@
                     {/each}
                   </div>
                 {/if}
+                <div class="evidence-toolbar">
+                  <div class="library-filters">
+                    {#each issueEvidenceFilterOptions as filter}
+                      <button
+                        class="segment"
+                        class:active={issueEvidenceFilter === filter.id}
+                        type="button"
+                        on:click={() => (issueEvidenceFilter = filter.id)}
+                      >
+                        {filter.label} {formatCount(issueEvidenceFilterCount(filter.id, issueEvidenceStats))}
+                      </button>
+                    {/each}
+                  </div>
+                  <label class="library-search compact-search">
+                    <Search />
+                    <input bind:value={issueEvidenceQuery} placeholder="근거 요약, 원문, 하위 의견 검색" />
+                  </label>
+                </div>
                 <div class="review-samples">
-                  {#each issueEvidenceItems as evidence}
+                  {#each filteredIssueEvidenceItems as evidence}
                     <article class="review-sample">
                       <div class="sample-meta">
                         <strong>{steamLanguageLabel(evidence.language ?? 'unknown')}</strong>
@@ -3005,7 +3179,7 @@
                       {/if}
                     </article>
                   {:else}
-                    <div class="empty-state">이 이슈의 근거 문장이 아직 없습니다.</div>
+                    <div class="empty-state">현재 필터에 맞는 근거가 없습니다. 부분 관련/전체 탭이나 검색어를 바꿔보세요.</div>
                   {/each}
                 </div>
               </section>
@@ -3097,13 +3271,20 @@
           </section>
         </section>
 
-        <section class:active={activeTab === 'evidence'} class="tab-view" aria-label="근거 리뷰">
-          <PageIntro title="근거 리뷰" subtitle="인사이트 카드가 어떤 실제 리뷰에서 나왔는지 한국어 요약과 원문을 함께 확인합니다.">
+        <section class:active={activeTab === 'evidence'} class="tab-view" aria-label="근거 검증">
+          <PageIntro title="근거 검증" subtitle="AI가 만든 인사이트를 믿어도 되는지, 한국어 요약과 실제 원문을 대조하는 감사 화면입니다.">
             <span class="status">인사이트 근거 {formatCount(issueEvidenceItems.length)}개 · 클러스터 근거 {formatCount(evidenceItems.length)}개</span>
           </PageIntro>
+          <div class="method-note">
+            <ScanSearch />
+            <div>
+              <strong>어떻게 쓰나요?</strong>
+              <span>인사이트 보드에서 카드를 고른 뒤, 여기서 검증 통과 근거와 부분 관련/제외 근거를 나눠 보며 요약이 과장됐는지 확인합니다.</span>
+            </div>
+          </div>
           <section class="control-grid evidence-review-grid">
             <div class="panel form-panel">
-              <div class="section-head"><div><h2>선택 인사이트 근거</h2><p>{selectedIssue ? selectedIssue.title : '인사이트 보드에서 카드를 선택하세요.'}</p></div></div>
+              <div class="section-head"><div><h2>선택한 인사이트의 검증 근거</h2><p>{selectedIssue ? selectedIssue.title : '인사이트 보드에서 카드를 선택하세요.'}</p></div></div>
               <div class="truth-list">
                 {#each issueEvidenceItems.slice(0, 8) as evidence}
                   <article class="truth-item evidence-truth">
@@ -3129,7 +3310,7 @@
               </div>
             </div>
             <section class="panel evidence">
-              <div class="section-head"><div><h3>근거 리뷰</h3><p>대표 클러스터에서 추출한 문장입니다.</p></div></div>
+              <div class="section-head"><div><h3>클러스터 근거 참고자료</h3><p>선택 인사이트와 별개로, 대표 클러스터에서 추출한 참고 문장입니다.</p></div></div>
               <div class="quote-list">
                 {#each evidenceItems.slice(0, 5) as evidence}
                   <article class="quote">
@@ -3142,7 +3323,7 @@
               </div>
             </section>
           </section>
-          <SimpleTable title="검증 큐" headers={['유형', '문장', '연결 주장', '품질']} rows={evidenceTableRows.length ? evidenceTableRows : [['대기', '근거 데이터가 아직 없습니다.', '미연결', '대기']]} />
+          <SimpleTable title="검증 대기/감사 큐" headers={['유형', '문장', '연결 주장', '품질']} rows={evidenceTableRows.length ? evidenceTableRows : [['대기', '근거 데이터가 아직 없습니다.', '미연결', '대기']]} />
         </section>
 
         <section class:active={activeTab === 'axes'} class="tab-view" aria-label="평가축 관리">

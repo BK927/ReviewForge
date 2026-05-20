@@ -28,6 +28,8 @@ Current deterministic code may still use fallback clustering and rule-based issu
 - Event comparisons are temporal comparisons, not causal proof. UI and API copy should say that metrics "changed after" or "changed together"; do not claim an event "caused" a change unless a human has explicitly verified causality.
 - Avoid empty generated claims such as "positive feedback is observed", "complaints repeat", or "related opinions exist". Replace them with the concrete player-facing signal.
 - Complaint, bug, request, and praise cards must not swap evidence polarity. Pure praise should not become complaint evidence, and pure complaint should not become praise evidence.
+- Do not present heuristic `confidence` as a statistical probability. In planner-facing UI, prefer evidence strength, verified evidence counts, verdict distribution, and language coverage.
+- Insight cards should be explorable in place. A user should be able to move from a card to subissues, verified evidence, partial/rejected evidence, and source-review context without guessing which separate page to open.
 
 ## Documentation Contract
 
