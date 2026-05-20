@@ -3491,7 +3491,7 @@
                         <span class={`sentiment ${verifierTone(evidence.verifier_verdict)}`}>{verifierLabel(evidence.verifier_verdict)}</span>
                         <span>{issueIntentLabel(evidence.evidence_role)}</span>
                         {#if displayEvidenceSubissue(evidence)}
-                          <span>{displayEvidenceSubissue(evidence)}</span>
+                          <span>하위 의견: {displayEvidenceSubissue(evidence)}</span>
                         {/if}
                       </div>
                       {#if evidence.summary_ko}

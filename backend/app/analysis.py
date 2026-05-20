@@ -648,6 +648,136 @@ CLAIM_AXIS_RULES = [
         why_actionable="후일담 DLC, 엔딩 보강, 스토어 기대 관리, 후속작 훅을 검토할 수 있습니다.",
     ),
     ClaimAxisRule(
+        key="short_content_loop",
+        label="짧은 분량과 반복 루프",
+        terms=(
+            "short",
+            "too short",
+            "content",
+            "volume",
+            "hour",
+            "hours",
+            "replay",
+            "repetitive",
+            "repeat",
+            "ending",
+            "endings",
+            "분량",
+            "짧",
+            "콘텐츠",
+            "컨텐츠",
+            "볼륨",
+            "반복",
+            "엔딩",
+            "다회차",
+            "短い",
+            "ボリューム",
+            "繰り返",
+            "结局",
+            "内容少",
+        ),
+        target_axis_keys=("short_content", "content_volume", "content_repetition"),
+        definition="가격과 기대 대비 플레이타임, 엔딩 반복, 재플레이 보상 밀도에 대한 평가입니다.",
+        include_criteria=("플레이타임이나 분량이 짧다는 주장", "엔딩 수집이나 반복 루프가 단조롭다는 주장", "콘텐츠 볼륨이 가격 기대와 맞지 않는다는 주장"),
+        exclude_criteria=("순수 스토리 취향", "엔딩의 정서적 톤만 말하는 리뷰", "무기/카드 랜덤성 불만"),
+        why_actionable="가격/분량 기대 관리, 엔딩 보상, 후속 패치와 후속작 콘텐츠 범위 판단으로 이어집니다.",
+    ),
+    ClaimAxisRule(
+        key="weapon_card_rng",
+        label="무기/카드 랜덤성과 통제감",
+        terms=(
+            "weapon",
+            "weapons",
+            "card",
+            "cards",
+            "rng",
+            "random",
+            "luck",
+            "durability",
+            "shotgun",
+            "grenade",
+            "무기",
+            "카드",
+            "랜덤",
+            "운",
+            "내구도",
+            "샷건",
+            "유탄",
+            "武器",
+            "カード",
+            "運",
+            "ランダム",
+            "耐久",
+            "随机",
+        ),
+        target_axis_keys=("weapon_card_rng", "balance"),
+        definition="무기 카드 제시, 랜덤성, 내구도, 특정 무기 효율이 플레이어 통제감에 미치는 평가입니다.",
+        include_criteria=("무기/카드 선택이 운에 좌우된다는 주장", "특정 무기나 카드가 지나치게 강하거나 약하다는 주장", "내구도와 랜덤 보급이 불만 또는 재미라는 주장"),
+        exclude_criteria=("순수 전투 손맛 호평", "콘텐츠 분량 불만", "엔딩 톤 감상"),
+        why_actionable="카드 풀, 리롤/보급 규칙, 무기 밸런스, 내구도 조정 후보로 바로 이어집니다.",
+    ),
+    ClaimAxisRule(
+        key="bleak_ending_tone",
+        label="어두운 엔딩 톤과 구원감",
+        terms=(
+            "ending",
+            "endings",
+            "bad end",
+            "good end",
+            "bleak",
+            "depressing",
+            "hopeless",
+            "salvation",
+            "rescue",
+            "엔딩",
+            "배드엔딩",
+            "굿엔딩",
+            "구원",
+            "허무",
+            "우울",
+            "救い",
+            "虚無",
+            "暗い",
+            "エンディング",
+            "结局",
+            "坏结局",
+        ),
+        target_axis_keys=("bleak_ending_tone", "story_logic", "content_volume"),
+        definition="결말이 의도된 암울함으로 받아들여지는지, 또는 구원감 부족과 허무함으로 비추천을 만드는지에 대한 평가입니다.",
+        include_criteria=("엔딩 톤이 너무 어둡거나 허무하다는 주장", "구원감·굿엔딩 기대가 충족되지 않았다는 주장", "어두운 결말을 정체성으로 호평하는 주장"),
+        exclude_criteria=("엔딩 진입 조건 불만", "플레이타임/분량 불만", "무기/카드 RNG 불만"),
+        why_actionable="스토어 기대 관리, 엔딩 보강, 후속 콘텐츠 톤, 패치노트 문구의 주의점으로 이어집니다.",
+    ),
+    ClaimAxisRule(
+        key="price_value_expectation",
+        label="가격 대비 기대와 가치 판단",
+        terms=(
+            "price",
+            "value",
+            "worth",
+            "expensive",
+            "cost",
+            "money",
+            "sale",
+            "가격",
+            "가성비",
+            "비싸",
+            "돈",
+            "값",
+            "세일",
+            "値段",
+            "価格",
+            "高い",
+            "性价比",
+            "价",
+        ),
+        target_axis_keys=("content_volume", "short_content", "content_missing"),
+        definition="가격, 세일 기대, 플레이타임, 콘텐츠 볼륨이 구매 만족도와 추천 여부에 미치는 평가입니다.",
+        include_criteria=("가격 대비 분량이나 완성도가 부족하다는 주장", "세일 때 추천한다는 조건부 가치 판단", "가성비를 강점으로 보는 주장"),
+        exclude_criteria=("순수 난이도 불만", "스토리 취향만 말하는 리뷰", "버그 재현 제보"),
+        why_actionable="가격 정책, 할인 메시지, 스토어 기대치, 콘텐츠 로드맵의 범위 판단으로 이어집니다.",
+    ),
+    ClaimAxisRule(
         key="character_art",
         label="캐릭터/아트/연출 매력",
         terms=(
@@ -709,6 +839,8 @@ CLAIM_AXIS_RULES = [
         why_actionable="언어별 QA, 폰트/자막 UI 개선, 번역 검수 우선순위로 바로 이어집니다.",
     ),
 ]
+
+BUG_FOCUS_RULE_KEYS = {"route_guidance", "localization_readability"}
 
 STOPWORDS = {
     "the",
@@ -1480,7 +1612,7 @@ def _build_issue_card(
     intent_counts = Counter(unit["intent"] for unit in members)
     language_counts = Counter(str(unit.get("language") or "unknown") for unit in members)
     avg_quality = sum(float(unit["quality_score"]) for unit in members) / len(members)
-    focus_rule = _issue_focus_rule(members, aspect)
+    focus_rule = _issue_focus_rule(members, aspect, intent)
     evidence_units = _select_issue_evidence_units(members, intent, focus_rule=focus_rule)
     evidence_count = len(evidence_units)
     support_score = min(math.log1p(len(unique_review_ids)) / math.log(81), 1.0)
@@ -1519,7 +1651,7 @@ def _build_issue_card(
     )
     aspect_spec = _issue_aspect_spec(aspect, app_id, aspects)
     top_terms = _issue_top_terms(members)
-    focus_rule = focus_rule or _issue_focus_rule(evidence_units or members, aspect)
+    focus_rule = focus_rule or _issue_focus_rule(evidence_units or members, aspect, intent)
     title = _issue_title(aspect_spec, intent, focus_rule)
     summary = _issue_summary(aspect_spec, intent, members, positive_ratio, focus_rule)
     return {
@@ -1979,8 +2111,11 @@ def _issue_aspect_spec(aspect: str, app_id: str | None, aspects: list[IssueAspec
     )
 
 
-def _issue_focus_rule(members: list[dict[str, Any]], aspect_key: str) -> ClaimAxisRule | None:
-    rule = _claim_axis_rule_for_members(members, strict=True)
+def _issue_focus_rule(members: list[dict[str, Any]], aspect_key: str, intent: str | None = None) -> ClaimAxisRule | None:
+    excluded_keys = None
+    if intent == "bug":
+        excluded_keys = {rule.key for rule in CLAIM_AXIS_RULES if rule.key not in BUG_FOCUS_RULE_KEYS}
+    rule = _claim_axis_rule_for_members(members, strict=True, excluded_keys=excluded_keys)
     if not rule:
         return None
     if aspect_key in BROAD_FALLBACK_ISSUE_ASPECT_KEYS:
@@ -2257,9 +2392,15 @@ def _claim_axis_suggestion(
     }
 
 
-def _claim_axis_rule_for_members(members: list[dict[str, Any]], strict: bool) -> ClaimAxisRule | None:
+def _claim_axis_rule_for_members(
+    members: list[dict[str, Any]],
+    strict: bool,
+    excluded_keys: set[str] | None = None,
+) -> ClaimAxisRule | None:
     scored: list[tuple[int, ClaimAxisRule]] = []
     for rule in CLAIM_AXIS_RULES:
+        if excluded_keys and rule.key in excluded_keys:
+            continue
         matches = _matched_rule_terms(rule, members)
         required = rule.min_terms if strict else 1
         if len(matches) >= required:

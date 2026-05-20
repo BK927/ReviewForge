@@ -75,6 +75,55 @@ with tempfile.TemporaryDirectory() as tmpdir:
     assert route_card["evidence_units"][0]["subissue"] == "루트/선택지 안내와 세이브 편의"
     assert route_card["evidence_units"][0].get("verifier_verdict") is None
 
+    short_loop_card = _build_issue_card(
+        "content_volume",
+        "complaint",
+        [
+            issue_unit("short-1", "The content is too short and the endings repeat too much.", "complaint", "content_volume"),
+            issue_unit("short-2", "Short content, only a few hours, and replay endings feel repetitive.", "complaint", "content_volume"),
+            issue_unit("short-3", "The volume feels light for the price because endings and content repeat.", "complaint", "content_volume"),
+        ],
+        None,
+        1000,
+        [content_aspect],
+    )
+    assert short_loop_card["title"].startswith("짧은 분량과 반복 루프")
+
+    price_bug_card = _build_issue_card(
+        "content_volume",
+        "bug",
+        [
+            issue_unit("price-bug-1", "The save bug made the price feel expensive.", "bug", "content_volume"),
+            issue_unit("price-bug-2", "Cloud save bug wasted time, so the cost felt high.", "bug", "content_volume"),
+            issue_unit("price-bug-3", "This bug is not worth the money until save is fixed.", "bug", "content_volume"),
+        ],
+        None,
+        1000,
+        [content_aspect],
+    )
+    assert not price_bug_card["title"].startswith("가격 대비 기대와 가치 판단")
+
+    balance_aspect = IssueAspect(
+        "balance",
+        "밸런스/RNG",
+        r"weapon|card|rng|random|luck",
+        "무작위성과 밸런스 신호입니다.",
+        "특정 빌드/구간/조건을 분리하세요.",
+    )
+    weapon_rng_card = _build_issue_card(
+        "balance",
+        "complaint",
+        [
+            issue_unit("rng-1", "Weapon cards are too random and durability makes the run feel luck based.", "complaint", "balance"),
+            issue_unit("rng-2", "RNG weapon cards decide everything, especially shotgun and grenade drops.", "complaint", "balance"),
+            issue_unit("rng-3", "Random cards and weapon durability remove player control.", "complaint", "balance"),
+        ],
+        None,
+        1000,
+        [balance_aspect],
+    )
+    assert weapon_rng_card["title"].startswith("무기/카드 랜덤성과 통제감")
+
     story_aspect = IssueAspect(
         "story_logic",
         "스토리/세계관/엔딩",
