@@ -1537,7 +1537,76 @@ def _hydrate_issue_row(row: dict[str, Any]) -> dict[str, Any]:
     row["partial_evidence_count"] = int(row.get("partial_evidence_count") or 0)
     row["reject_evidence_count"] = int(row.get("reject_evidence_count") or 0)
     row["unverified_evidence_count"] = int(row.get("unverified_evidence_count") or 0)
+    row["priority_factors"] = _issue_priority_factors(row)
     return row
+
+
+def _issue_priority_factors(row: dict[str, Any]) -> dict[str, Any]:
+    unique_reviews = int(row.get("unique_review_count") or 0)
+    total_evidence = int(row.get("evidence_count") or 0)
+    match_evidence = int(row.get("match_evidence_count") or 0)
+    partial_evidence = int(row.get("partial_evidence_count") or 0)
+    reject_evidence = int(row.get("reject_evidence_count") or 0)
+    unverified_evidence = int(row.get("unverified_evidence_count") or 0)
+    language_counts = dict(row.get("language_counts") or {})
+    language_total = sum(int(value or 0) for value in language_counts.values())
+    dominant_language, dominant_count = _dominant_count_item(language_counts)
+    language_share = (dominant_count / language_total) if language_total else None
+    positive_ratio = row.get("positive_ratio")
+    positive_ratio_value = float(positive_ratio) if positive_ratio is not None else None
+    intent = str(row.get("intent") or "")
+    polarity_fit = positive_ratio_value if intent == "praise" and positive_ratio_value is not None else (
+        1.0 - positive_ratio_value if positive_ratio_value is not None else None
+    )
+
+    reasons: list[str] = []
+    if unique_reviews >= 80:
+        reasons.append("서로 다른 리뷰에서 넓게 반복됩니다.")
+    elif unique_reviews >= 20:
+        reasons.append("서로 다른 리뷰에서 반복되지만 표본 확인이 필요합니다.")
+    else:
+        reasons.append("리뷰 수가 적어 탐색 신호로 봐야 합니다.")
+
+    if match_evidence >= 5:
+        reasons.append("검증 통과 근거가 충분합니다.")
+    elif match_evidence > 0:
+        reasons.append("검증 통과 근거가 있지만 아직 제한적입니다.")
+    elif unverified_evidence or total_evidence:
+        reasons.append("연결 근거는 있으나 검증 통과 여부가 부족합니다.")
+
+    if partial_evidence or reject_evidence:
+        reasons.append("부분/제외 근거가 있어 요약 과장 여부를 확인해야 합니다.")
+    if len(language_counts) >= 3:
+        reasons.append("여러 언어권에서 관측됩니다.")
+    elif language_share is not None and language_share >= 0.7:
+        reasons.append("특정 언어권 근거가 편중되어 있습니다.")
+    if polarity_fit is not None and polarity_fit < 0.45:
+        reasons.append("추천/비추천 방향과 카드 성격이 엇갈릴 수 있습니다.")
+
+    return {
+        "reach": unique_reviews,
+        "evidence": {
+            "total": total_evidence,
+            "match": match_evidence,
+            "partial": partial_evidence,
+            "reject": reject_evidence,
+            "unverified": unverified_evidence,
+        },
+        "languages": {
+            "count": len(language_counts),
+            "dominant": dominant_language,
+            "dominant_share": language_share,
+        },
+        "polarity_fit": polarity_fit,
+        "reasons": reasons[:5],
+    }
+
+
+def _dominant_count_item(counts: dict[str, int]) -> tuple[str | None, int]:
+    if not counts:
+        return None, 0
+    key, value = max(counts.items(), key=lambda item: int(item[1] or 0))
+    return str(key), int(value or 0)
 
 
 def _hydrate_axis_suggestion(row: dict[str, Any]) -> dict[str, Any]:

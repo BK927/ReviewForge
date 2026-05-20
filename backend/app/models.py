@@ -202,6 +202,7 @@ class Issue(BaseModel):
     partial_evidence_count: int = 0
     reject_evidence_count: int = 0
     unverified_evidence_count: int = 0
+    priority_factors: dict[str, Any] = Field(default_factory=dict)
     source: str | None = None
     model: str | None = None
     created_at: datetime

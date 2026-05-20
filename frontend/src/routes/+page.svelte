@@ -195,6 +195,23 @@
     partial_evidence_count?: number;
     reject_evidence_count?: number;
     unverified_evidence_count?: number;
+    priority_factors?: {
+      reach?: number;
+      evidence?: {
+        total?: number;
+        match?: number;
+        partial?: number;
+        reject?: number;
+        unverified?: number;
+      };
+      languages?: {
+        count?: number;
+        dominant?: string | null;
+        dominant_share?: number | null;
+      };
+      polarity_fit?: number | null;
+      reasons?: string[];
+    };
     source?: string | null;
     model?: string | null;
     created_at: string;
@@ -1768,6 +1785,16 @@
     return notes.length ? notes.slice(0, 4) : ['큰 반례 신호는 보이지 않지만, 외부 의사결정 전 원문 리뷰를 한 번 더 대조하세요.'];
   }
 
+  function issuePriorityReasons(issue: ApiIssue) {
+    const reasons = issue.priority_factors?.reasons ?? [];
+    if (reasons.length) return reasons.slice(0, 4);
+    const fallback = [`${formatCount(issue.unique_review_count)}개 리뷰에서 반복됩니다.`, issueEvidenceLabel(issue)];
+    if (issue.language_counts && Object.keys(issue.language_counts).length > 1) {
+      fallback.push(`${formatCount(Object.keys(issue.language_counts).length)}개 언어권에서 관측됩니다.`);
+    }
+    return fallback;
+  }
+
   function issuePriorityScore(issue: ApiIssue) {
     const statusWeight =
       issue.status === 'confirmed' ? 4 : issue.status === 'strength' ? 3 : issue.status === 'needs_review' ? 2 : 1;
@@ -3255,6 +3282,7 @@
                 <div class="cluster-insight-grid">
                   <div><strong>영향 영역</strong><span>{issueAspectLabel(selectedIssue.aspect)}</span></div>
                   <div><strong>신호 유형</strong><span>{issueIntentLabel(selectedIssue.intent)}</span></div>
+                  <div><strong>우선순위 이유</strong><span>{issuePriorityReasons(selectedIssue).slice(0, 2).join(' ')}</span></div>
                   <div><strong>근거 강도</strong><span>{issueEvidenceStrengthLabel(issueEvidenceStats)}</span></div>
                   <div><strong>추천율</strong><span>{selectedIssue.positive_ratio === null || selectedIssue.positive_ratio === undefined ? '미상' : formatPercent(selectedIssue.positive_ratio)}</span></div>
                   <div><strong>검증 통과</strong><span>{formatCount(issueEvidenceStats.match)}개 · 일치율 {issueEvidenceStats.matchRate === null ? '미상' : formatPercent(issueEvidenceStats.matchRate)}</span></div>
