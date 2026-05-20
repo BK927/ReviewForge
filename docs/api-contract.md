@@ -147,7 +147,13 @@ trusted first:
 `playtime_min`, and `playtime_max`.
 
 `GET /api/events/{event_id}/impact` compares review windows before and after an
-event. Treat the result as a temporal comparison, not a causal claim.
+event. Treat the result as a temporal comparison, not a causal claim. The
+response also includes `topics`, a small list of items that moved together
+across the two windows. When the latest issue analysis is available, topics are
+based on non-quarantined issue-unit `aspect` + `intent` counts. Otherwise the
+endpoint falls back to review language distribution changes. Topic `delta`
+values are share-point changes between the after and before windows; they
+describe co-movement only.
 
 ## Issue Board, Claims, and Axes
 

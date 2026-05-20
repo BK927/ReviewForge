@@ -11,6 +11,13 @@
 
 새 알고리즘 실험, 사용자 피드백, 채택/폐기 결정은 앞으로 `docs/research/`의 작은 실험 카드와 `docs/research/decision-log.md`에 누적한다. 이 파일은 긴 배경 기록과 과거 연구 맥락으로 유지한다.
 
+2026-05-20 추가 구현 메모:
+
+- 이벤트 영향 API는 전후 표본/추천율 비교에 더해 `topics`를 반환한다.
+- `topics`는 최신 issue analysis의 non-quarantined issue unit에서 `aspect + intent` 점유율이 함께 변한 항목을 계산한다.
+- issue unit이 없으면 언어 분포 변화로 fallback한다.
+- 이 결과는 패치/이벤트 원인을 주장하지 않고, "같이 움직인 항목"과 "전후 비교"로만 표현해야 한다.
+
 ## 2026-05-20 연구 목적
 
 현재 문제는 다음과 같다.

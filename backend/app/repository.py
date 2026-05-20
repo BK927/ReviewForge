@@ -1310,6 +1310,7 @@ def event_impact(event_id: int, window_days: int = 14, app_id: str | None = None
         after_end = occurred_at + timedelta(days=window_days)
         before = _impact_window(conn, before_start, occurred_at, resolved_app_id)
         after = _impact_window(conn, occurred_at, after_end, resolved_app_id)
+        topics = _impact_topics(conn, before_start, occurred_at, after_end, resolved_app_id)
     return {
         "event": event,
         "window_days": window_days,
@@ -1320,6 +1321,7 @@ def event_impact(event_id: int, window_days: int = 14, app_id: str | None = None
             "positive_ratio": float(after["positive_ratio"] - before["positive_ratio"]),
             "avg_weighted_score": float(after["avg_weighted_score"] - before["avg_weighted_score"]),
         },
+        "topics": topics,
     }
 
 
@@ -1350,6 +1352,203 @@ def _impact_window(
     ).fetchone()
     keys = ["review_count", "positive_count", "negative_count", "positive_ratio", "avg_weighted_score"]
     return dict(zip(keys, row))
+
+
+_IMPACT_ASPECT_LABELS = {
+    "performance": "성능/안정성",
+    "balance": "밸런스/RNG",
+    "progression": "난이도/진척",
+    "content_repetition": "반복성/콘텐츠",
+    "ui_onboarding": "UI/가독성/온보딩",
+    "content_missing": "누락/비교",
+    "story_logic": "스토리/세계관/엔딩",
+    "content_volume": "분량/완성도",
+    "localization_readability": "번역/가독성",
+    "update_completion": "업데이트/완성도",
+    "route_guidance": "분기/힌트/공략 의존",
+    "martial_story": "무협 서사/인물 매력",
+    "mystery_logic": "추리/재판/마법 규칙",
+    "chapter_replay": "챕터/회차 편의",
+    "character_voice": "캐릭터/연출/더빙",
+    "short_content": "짧은 분량/엔딩 반복",
+    "weapon_card_rng": "무기/카드 RNG",
+    "bleak_ending_tone": "엔딩 톤/구원감",
+    "general": "일반 의견",
+}
+
+_IMPACT_INTENT_LABELS = {
+    "complaint": "불만",
+    "bug": "문제",
+    "request": "요청",
+    "praise": "호평",
+    "other": "의견",
+}
+
+
+def _impact_topics(
+    conn: duckdb.DuckDBPyConnection,
+    before_start: datetime,
+    split_at: datetime,
+    after_end: datetime,
+    app_id: str | None,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    issue_topics = _impact_issue_topics(conn, before_start, split_at, after_end, app_id, limit)
+    if issue_topics:
+        return issue_topics
+    return _impact_language_topics(conn, before_start, split_at, after_end, app_id, limit)
+
+
+def _impact_issue_topics(
+    conn: duckdb.DuckDBPyConnection,
+    before_start: datetime,
+    split_at: datetime,
+    after_end: datetime,
+    app_id: str | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    latest_run_id = _latest_completed_issue_run_id(conn, app_id)
+    if latest_run_id is None:
+        return []
+    time_expr = "coalesce(r.steam_created_at, r.collected_at)"
+    clauses = [
+        "iu.analysis_run_id = ?",
+        "NOT iu.is_quarantined",
+        f"{time_expr} >= ?",
+        f"{time_expr} < ?",
+    ]
+    params: list[Any] = [latest_run_id, before_start, after_end]
+    if app_id:
+        clauses.append("r.app_id = ?")
+        params.append(app_id)
+    rows = rows_to_dicts(
+        conn.execute(
+            f"""
+            WITH period_units AS (
+                SELECT
+                    CASE
+                        WHEN {time_expr} >= ? AND {time_expr} < ? THEN 'before'
+                        WHEN {time_expr} >= ? AND {time_expr} < ? THEN 'after'
+                    END AS period,
+                    coalesce(nullif(iu.aspect, ''), 'general') AS aspect,
+                    coalesce(nullif(iu.intent, ''), 'other') AS intent,
+                    count(*) AS unit_count
+                FROM issue_units iu
+                JOIN reviews r ON r.recommendation_id = iu.review_id
+                WHERE {" AND ".join(clauses)}
+                GROUP BY period, aspect, intent
+            )
+            SELECT
+                aspect,
+                intent,
+                sum(CASE WHEN period = 'before' THEN unit_count ELSE 0 END) AS before_count,
+                sum(CASE WHEN period = 'after' THEN unit_count ELSE 0 END) AS after_count
+            FROM period_units
+            WHERE period IS NOT NULL
+            GROUP BY aspect, intent
+            HAVING
+                sum(CASE WHEN period = 'before' THEN unit_count ELSE 0 END) > 0
+                OR sum(CASE WHEN period = 'after' THEN unit_count ELSE 0 END) > 0
+            """,
+            [before_start, split_at, split_at, after_end, *params],
+        )
+    )
+    return _impact_topic_items(rows, "issue_units", limit)
+
+
+def _impact_language_topics(
+    conn: duckdb.DuckDBPyConnection,
+    before_start: datetime,
+    split_at: datetime,
+    after_end: datetime,
+    app_id: str | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    time_expr = "coalesce(steam_created_at, collected_at)"
+    clauses = [f"{time_expr} >= ?", f"{time_expr} < ?"]
+    params: list[Any] = [before_start, after_end]
+    if app_id:
+        clauses.append("app_id = ?")
+        params.append(app_id)
+    rows = rows_to_dicts(
+        conn.execute(
+            f"""
+            WITH period_reviews AS (
+                SELECT
+                    CASE
+                        WHEN {time_expr} >= ? AND {time_expr} < ? THEN 'before'
+                        WHEN {time_expr} >= ? AND {time_expr} < ? THEN 'after'
+                    END AS period,
+                    coalesce(nullif(language, ''), 'unknown') AS language,
+                    count(*) AS review_count
+                FROM reviews
+                WHERE {" AND ".join(clauses)}
+                GROUP BY period, language
+            )
+            SELECT
+                language AS label,
+                sum(CASE WHEN period = 'before' THEN review_count ELSE 0 END) AS before_count,
+                sum(CASE WHEN period = 'after' THEN review_count ELSE 0 END) AS after_count
+            FROM period_reviews
+            WHERE period IS NOT NULL
+            GROUP BY language
+            HAVING
+                sum(CASE WHEN period = 'before' THEN review_count ELSE 0 END) > 0
+                OR sum(CASE WHEN period = 'after' THEN review_count ELSE 0 END) > 0
+            """,
+            [before_start, split_at, split_at, after_end, *params],
+        )
+    )
+    return _impact_topic_items(rows, "review_language", limit)
+
+
+def _impact_topic_items(rows: list[dict[str, Any]], source: str, limit: int) -> list[dict[str, Any]]:
+    before_total = sum(int(row.get("before_count") or 0) for row in rows)
+    after_total = sum(int(row.get("after_count") or 0) for row in rows)
+    if before_total == 0 and after_total == 0:
+        return []
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        before_count = int(row.get("before_count") or 0)
+        after_count = int(row.get("after_count") or 0)
+        before_share = (before_count / before_total) if before_total else 0.0
+        after_share = (after_count / after_total) if after_total else 0.0
+        delta = float(after_share - before_share)
+        if before_count + after_count < 2 and abs(delta) < 0.01:
+            continue
+        if source == "issue_units":
+            label = _impact_issue_topic_label(str(row.get("aspect") or "general"), str(row.get("intent") or "other"))
+            detail = (
+                f"전 {before_count}개, 후 {after_count}개 이슈 문장으로 함께 움직였습니다. "
+                "원인 단정이 아니라 전후 기간 비교입니다."
+            )
+        else:
+            label = f"{row.get('label') or 'unknown'} 리뷰"
+            detail = (
+                f"전 {before_count}개, 후 {after_count}개 리뷰로 언어 분포가 함께 움직였습니다. "
+                "이슈 분석 단위가 부족해 언어 변화를 대신 표시합니다."
+            )
+        items.append(
+            {
+                "label": label,
+                "detail": detail,
+                "delta": delta,
+                "before_count": before_count,
+                "after_count": after_count,
+                "source": source,
+            }
+        )
+    return sorted(
+        items,
+        key=lambda item: (abs(float(item["delta"])), int(item["after_count"]) + int(item["before_count"])),
+        reverse=True,
+    )[:limit]
+
+
+def _impact_issue_topic_label(aspect: str, intent: str) -> str:
+    aspect_label = _IMPACT_ASPECT_LABELS.get(aspect, aspect.replace("_", " "))
+    intent_label = _IMPACT_INTENT_LABELS.get(intent, intent.replace("_", " "))
+    return f"{aspect_label} · {intent_label}"
 
 
 def list_jobs() -> list[dict[str, Any]]:

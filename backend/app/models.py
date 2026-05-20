@@ -415,9 +415,19 @@ class EventImpactWindow(BaseModel):
     avg_weighted_score: float
 
 
+class EventImpactTopic(BaseModel):
+    label: str
+    detail: str
+    delta: float
+    before_count: int = 0
+    after_count: int = 0
+    source: str = "issue_units"
+
+
 class EventImpact(BaseModel):
     event: Event
     window_days: int
     before: EventImpactWindow
     after: EventImpactWindow
     delta: dict[str, float]
+    topics: list[EventImpactTopic] = Field(default_factory=list)
