@@ -851,6 +851,7 @@
   $: claimRows = buildClaimRows(claims, evidenceItems);
   $: evidenceTableRows = buildEvidenceTableRows(evidenceItems);
   $: reportBlocks = buildReportBlocks(latestReport, dashboard, issues, clusters, issueEvidenceItems.length || evidenceItems.length);
+  $: marketingBriefRows = buildMarketingBriefRows(issues, issueEvidenceItems);
   $: analysisMetrics = buildAnalysisMetrics(dashboard, clusters, evidenceItems, reports, analysisJob, clusterSourceText);
   $: inspectorRows = buildInspectorRows(dashboard, evidenceItems.length);
   $: priorityItems = buildPriorityItems();
@@ -2462,6 +2463,40 @@
     }${evidenceCount ? `근거 ${formatCount(evidenceCount)}개가 연결되어 있습니다.` : '근거 API 데이터는 아직 없습니다.'}`;
   }
 
+  function buildMarketingBriefRows(issueItems: ApiIssue[], selectedEvidence: ApiIssueEvidence[]): string[][] {
+    const strengths = issueItems
+      .filter((issue) => issue.intent === 'praise' || issue.status === 'strength')
+      .sort((a, b) => issuePriorityScore(b) - issuePriorityScore(a));
+    const topStrength = strengths[0];
+    const reusableQuote = selectedEvidence.find(
+      (item) => item.voted_up === true && issueEvidenceVerdict(item.verifier_verdict) !== 'reject'
+    );
+    const riskText = selectedEvidence.some((item) => issueEvidenceVerdict(item.verifier_verdict) === 'reject')
+      ? '제외 근거가 섞여 있으므로 외부 문구로 쓰기 전 원문을 다시 확인하세요.'
+      : '검증 통과 근거와 전체 원문을 확인한 뒤 외부 문구로 옮기세요.';
+
+    return [
+      [
+        '유지할 재미',
+        topStrength ? `${topStrength.title}: ${trimText(topStrength.summary, 86)}` : '강점 카드가 아직 없습니다.',
+        topStrength ? issueEvidenceLabel(topStrength) : '분석 대기'
+      ],
+      [
+        '홍보 소재',
+        topStrength
+          ? trimText(topStrength.recommended_action ?? '강점 evidence에서 스토어/패치노트 문구 후보를 고르세요.', 96)
+          : '추천 리뷰 기반 활용 포인트가 생기면 표시됩니다.',
+        topStrength ? plannerActionLabel(topStrength) : '대기'
+      ],
+      [
+        '유저 표현 후보',
+        reusableQuote ? trimText(reusableQuote.summary_ko || reusableQuote.quote, 96) : '인사이트 보드에서 강점 카드를 선택하면 후보 문장이 표시됩니다.',
+        reusableQuote ? verifierLabel(reusableQuote.verifier_verdict) : '선택 필요'
+      ],
+      ['과장 주의', riskText, '원문 대조']
+    ];
+  }
+
   function buildInspectorRows(summary: ApiDashboard, evidenceCount: number): string[][] {
     return [
       ['데이터 최신성', latestLabel(summary.latest_review_at), summary.latest_review_at ? '확인' : '대기', summary.latest_review_at ? 'good' : 'mixed'],
@@ -3503,6 +3538,7 @@
               {/each}
             </aside>
           </section>
+          <SimpleTable title="강점 활용 메모" headers={['용도', '후보', '검증']} rows={marketingBriefRows} />
         </section>
 
         <section class:active={activeTab === 'settings'} class="tab-view" aria-label="실행/설정">
