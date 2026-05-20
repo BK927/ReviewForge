@@ -164,7 +164,10 @@ planning cards.
   UI can distinguish verified support from audit context. Cards also include
   `priority_factors`, a descriptive object that explains reach, verdict mix,
   language spread, polarity fit, and short planner-facing priority reasons. It
-  is not a statistical probability.
+  is not a statistical probability. `segment_factors` summarizes evidence
+  playtime bands, recommendation polarity, language concentration, and concise
+  segment tags such as early-player, long-player, multilingual, or language
+  concentration signals.
 - `GET /api/issues/summary` returns issue counts, evidence counts, quarantined
   unit counts, and coverage for the latest run.
 - `GET /api/issues/{issue_id}/evidence` returns linked evidence units for one

@@ -1,3 +1,4 @@
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 import json
 from typing import Any
@@ -786,7 +787,9 @@ def list_issues(
         """
         params.append(limit)
         rows = rows_to_dicts(conn.execute(sql, params))
-    return [_hydrate_issue_row(row) for row in rows]
+        issues = [_hydrate_issue_row(row) for row in rows]
+        _attach_issue_segment_factors(conn, issues)
+        return issues
 
 
 def list_issue_evidence(
@@ -1607,6 +1610,86 @@ def _dominant_count_item(counts: dict[str, int]) -> tuple[str | None, int]:
         return None, 0
     key, value = max(counts.items(), key=lambda item: int(item[1] or 0))
     return str(key), int(value or 0)
+
+
+def _attach_issue_segment_factors(conn: duckdb.DuckDBPyConnection, issues: list[dict[str, Any]]) -> None:
+    issue_ids = [int(issue["id"]) for issue in issues if issue.get("id") is not None]
+    if not issue_ids:
+        return
+    placeholders = ",".join(["?"] * len(issue_ids))
+    rows = rows_to_dicts(
+        conn.execute(
+            f"""
+            SELECT
+                ie.issue_id,
+                coalesce(ie.language, r.language, 'unknown') AS language,
+                coalesce(ie.voted_up, r.voted_up) AS voted_up,
+                coalesce(r.playtime_at_review, 0) AS playtime_at_review
+            FROM issue_evidence ie
+            LEFT JOIN reviews r ON r.recommendation_id = ie.review_id
+            WHERE ie.issue_id IN ({placeholders})
+            """,
+            issue_ids,
+        )
+    )
+    grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[int(row["issue_id"])].append(row)
+    for issue in issues:
+        issue["segment_factors"] = _issue_segment_factors(grouped.get(int(issue["id"]), []), issue)
+
+
+def _issue_segment_factors(rows: list[dict[str, Any]], issue: dict[str, Any]) -> dict[str, Any]:
+    language_counts: Counter[str] = Counter(str(row.get("language") or "unknown") for row in rows)
+    playtime_counts: Counter[str] = Counter(_playtime_segment(row.get("playtime_at_review")) for row in rows)
+    recommendation_counts: Counter[str] = Counter("recommended" if row.get("voted_up") else "not_recommended" for row in rows)
+    total = len(rows)
+    dominant_language, dominant_language_count = _dominant_count_item(dict(language_counts))
+    dominant_playtime, dominant_playtime_count = _dominant_count_item(dict(playtime_counts))
+    recommended = int(recommendation_counts.get("recommended", 0))
+    not_recommended = int(recommendation_counts.get("not_recommended", 0))
+    tags: list[str] = []
+    if dominant_playtime and total and dominant_playtime_count / total >= 0.5:
+        tags.append(_playtime_segment_label(dominant_playtime))
+    if len(language_counts) >= 3:
+        tags.append("다국어 반복")
+    elif dominant_language and total and dominant_language_count / total >= 0.7:
+        tags.append(f"{dominant_language} 편중")
+    if str(issue.get("intent")) == "praise" and recommended >= max(2, not_recommended):
+        tags.append("추천 리뷰 강점")
+    if str(issue.get("intent")) != "praise" and recommended > not_recommended:
+        tags.append("추천 리뷰 속 아쉬움")
+    if str(issue.get("intent")) != "praise" and not_recommended >= max(2, recommended):
+        tags.append("비추천 핵심 불만")
+    return {
+        "playtime_counts": dict(playtime_counts),
+        "dominant_playtime": dominant_playtime,
+        "dominant_playtime_share": (dominant_playtime_count / total) if total else None,
+        "recommendation_counts": dict(recommendation_counts),
+        "language_counts": dict(language_counts),
+        "dominant_language": dominant_language,
+        "dominant_language_share": (dominant_language_count / total) if total else None,
+        "tags": tags[:4],
+    }
+
+
+def _playtime_segment(value: Any) -> str:
+    minutes = int(value or 0)
+    if minutes <= 0:
+        return "unknown"
+    if minutes < 120:
+        return "early"
+    if minutes < 1200:
+        return "mid"
+    return "long"
+
+
+def _playtime_segment_label(segment: str) -> str:
+    return {
+        "early": "초반 플레이어",
+        "mid": "중반 플레이어",
+        "long": "장기 플레이어",
+    }.get(segment, "플레이타임 미상")
 
 
 def _hydrate_axis_suggestion(row: dict[str, Any]) -> dict[str, Any]:

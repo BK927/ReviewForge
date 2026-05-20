@@ -212,6 +212,16 @@
       polarity_fit?: number | null;
       reasons?: string[];
     };
+    segment_factors?: {
+      playtime_counts?: Record<string, number>;
+      dominant_playtime?: string | null;
+      dominant_playtime_share?: number | null;
+      recommendation_counts?: Record<string, number>;
+      language_counts?: Record<string, number>;
+      dominant_language?: string | null;
+      dominant_language_share?: number | null;
+      tags?: string[];
+    };
     source?: string | null;
     model?: string | null;
     created_at: string;
@@ -1795,6 +1805,16 @@
     return fallback;
   }
 
+  function issueSegmentTags(issue: ApiIssue) {
+    const tags = issue.segment_factors?.tags ?? [];
+    if (tags.length) return tags.slice(0, 4);
+    const languageCounts = issue.language_counts ?? {};
+    const languageKeys = Object.keys(languageCounts);
+    if (languageKeys.length >= 3) return ['다국어 반복'];
+    if (languageKeys.length === 1) return [`${steamLanguageLabel(languageKeys[0])} 편중`];
+    return ['세그먼트 근거 대기'];
+  }
+
   function issuePriorityScore(issue: ApiIssue) {
     const statusWeight =
       issue.status === 'confirmed' ? 4 : issue.status === 'strength' ? 3 : issue.status === 'needs_review' ? 2 : 1;
@@ -2517,9 +2537,16 @@
       .filter((issue) => issue.intent === 'praise' || issue.status === 'strength')
       .sort((a, b) => issuePriorityScore(b) - issuePriorityScore(a));
     const topStrength = strengths[0];
-    const reusableQuote = selectedEvidence.find(
-      (item) => item.voted_up === true && issueEvidenceVerdict(item.verifier_verdict) !== 'reject'
-    );
+    const selectedIssue = issueItems.find((issue) => String(issue.id) === activeIssue) ?? null;
+    const selectedIssueIsStrength = selectedIssue?.intent === 'praise' || selectedIssue?.status === 'strength';
+    const reusableQuote = selectedIssueIsStrength
+      ? selectedEvidence.find(
+          (item) =>
+            item.voted_up === true &&
+            item.evidence_role === 'praise' &&
+            issueEvidenceVerdict(item.verifier_verdict) !== 'reject'
+        )
+      : null;
     const riskText = selectedEvidence.some((item) => issueEvidenceVerdict(item.verifier_verdict) === 'reject')
       ? '제외 근거가 섞여 있으므로 외부 문구로 쓰기 전 원문을 다시 확인하세요.'
       : '검증 통과 근거와 전체 원문을 확인한 뒤 외부 문구로 옮기세요.';
@@ -3287,6 +3314,7 @@
                   <div><strong>추천율</strong><span>{selectedIssue.positive_ratio === null || selectedIssue.positive_ratio === undefined ? '미상' : formatPercent(selectedIssue.positive_ratio)}</span></div>
                   <div><strong>검증 통과</strong><span>{formatCount(issueEvidenceStats.match)}개 · 일치율 {issueEvidenceStats.matchRate === null ? '미상' : formatPercent(issueEvidenceStats.matchRate)}</span></div>
                   <div><strong>언어 분포</strong><span>{languageDominanceLabel(issueEvidenceStats)}</span></div>
+                  <div><strong>세그먼트</strong><span>{issueSegmentTags(selectedIssue).join(' · ')}</span></div>
                   <div><strong>분석 방식</strong><span>{insightSourceLabel(selectedIssue.source ?? null)}{selectedIssue.model ? ` · ${selectedIssue.model}` : ''}</span></div>
                 </div>
                 <div class="method-note">
@@ -3648,7 +3676,7 @@
             </section>
             <AuditPanel title="분석 신뢰도" rows={inspectorRows} compact />
             <section class="panel priority">
-              <div class="section-head"><div><h3>기획 우선순위</h3><p>빈도, 심각도, 최근성을 함께 보되 인과로 단정하지 않습니다.</p></div></div>
+              <div class="section-head"><div><h3>기획 우선순위</h3><p>빈도, 근거 강도, 검증 상태를 함께 보되 인과로 단정하지 않습니다.</p></div></div>
               <ol class="priority-list">
                 {#each priorityItems as item}
                   <li><span class="rank">{item[0]}</span><div><strong>{item[1]}</strong><span>{item[2]}</span></div><span class={`sentiment ${item[4]}`}>{item[3]}</span></li>
