@@ -14,3 +14,4 @@ backend/data/*.duckdb
 backend/data/*.wal
 backend/data/*.tmp
 artifacts/
+.codex-screenshots/
