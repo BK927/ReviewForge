@@ -1690,6 +1690,21 @@
     return `연결 근거 ${formatCount(total)}`;
   }
 
+  function issueStatusBadge(issue: ApiIssue): { label: string; tone: Tone } {
+    const total = issue.evidence_count ?? 0;
+    const match = issue.match_evidence_count ?? 0;
+    const partial = issue.partial_evidence_count ?? 0;
+    if (match > 0) {
+      return {
+        label: issue.intent === 'praise' || issue.status === 'strength' ? '검증된 강점' : '검증 통과',
+        tone: issueTone(issue)
+      };
+    }
+    if (partial > 0) return { label: '부분 관련', tone: 'mixed' };
+    if (total > 0) return { label: '미검증', tone: 'mixed' };
+    return { label: issue.status === 'confirmed' ? '검토 필요' : issueStatusLabel(issue.status), tone: 'mixed' };
+  }
+
   function plannerActionLabel(issue: ApiIssue) {
     if (issue.intent === 'praise') return '유지/확장/홍보 후보';
     if (issue.intent === 'request') return '수요와 범위 검토';
@@ -3343,6 +3358,7 @@
             <section class="issue-grid">
               {#each filteredIssues as issue}
                 {@const decision = planningDecision(issue)}
+                {@const statusBadge = issueStatusBadge(issue)}
                 <button class="issue-card" class:active={activeIssue === String(issue.id)} type="button" on:click={() => loadIssueEvidence(issue.id)}>
                   <div class="issue-decision">
                     <span class={`decision-label ${decision.tone}`}>{decision.label}</span>
@@ -3353,7 +3369,7 @@
                       <h3>{issue.title}</h3>
                       <small>{issueAspectLabel(issue.aspect)} · {issueIntentLabel(issue.intent)}</small>
                     </div>
-                    <span class={`sentiment ${issueTone(issue)}`}>{issueStatusLabel(issue.status)}</span>
+                    <span class={`sentiment ${statusBadge.tone}`}>{statusBadge.label}</span>
                   </header>
                   <p>{issue.summary}</p>
                   <div class="issue-stats">
@@ -3374,13 +3390,14 @@
             </section>
             {#if selectedIssue}
               {@const selectedDecision = planningDecision(selectedIssue)}
+              {@const selectedStatusBadge = issueStatusBadge(selectedIssue)}
               <section class="panel issue-detail">
                 <div class="detail-head">
                   <div>
                     <h2>{selectedIssue.title}</h2>
                     <p>{selectedIssue.why_it_matters ?? selectedIssue.summary}</p>
                   </div>
-                  <span class={`sentiment ${issueTone(selectedIssue)}`}>{issueStatusLabel(selectedIssue.status)}</span>
+                  <span class={`sentiment ${selectedStatusBadge.tone}`}>{selectedStatusBadge.label}</span>
                 </div>
                 <div class="cluster-insight-grid">
                   <div><strong>영향 영역</strong><span>{issueAspectLabel(selectedIssue.aspect)}</span></div>
