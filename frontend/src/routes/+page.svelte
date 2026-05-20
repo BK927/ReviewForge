@@ -191,6 +191,10 @@
     recommended_action?: string | null;
     warnings?: string[];
     evidence_count?: number;
+    match_evidence_count?: number;
+    partial_evidence_count?: number;
+    reject_evidence_count?: number;
+    unverified_evidence_count?: number;
     source?: string | null;
     model?: string | null;
     created_at: string;
@@ -1619,10 +1623,26 @@
   }
 
   function issueStrengthLabel(issue: ApiIssue) {
-    const evidence = issue.evidence_count ?? 0;
-    if (evidence >= 8 && issue.status !== 'needs_review') return '높음';
-    if (evidence >= 3) return '중간';
+    const matchEvidence = issue.match_evidence_count ?? 0;
+    const connectedEvidence = issue.evidence_count ?? 0;
+    if (matchEvidence >= 5) return '높음';
+    if (matchEvidence >= 2) return '중간';
+    if (connectedEvidence >= 3) return '미검증';
     return '낮음';
+  }
+
+  function issueEvidenceLabel(issue: ApiIssue) {
+    const total = issue.evidence_count ?? 0;
+    const match = issue.match_evidence_count ?? 0;
+    const partial = issue.partial_evidence_count ?? 0;
+    const reject = issue.reject_evidence_count ?? 0;
+    const unverified = issue.unverified_evidence_count ?? Math.max(0, total - match - partial - reject);
+    if (match > 0) {
+      const audit = partial + reject ? ` · 부분/제외 ${formatCount(partial + reject)}` : '';
+      return `검증 통과 ${formatCount(match)} / 연결 ${formatCount(total)}${audit}`;
+    }
+    if (unverified > 0) return `미검증 연결 ${formatCount(unverified)} / 전체 ${formatCount(total)}`;
+    return `연결 근거 ${formatCount(total)}`;
   }
 
   function plannerActionLabel(issue: ApiIssue) {
@@ -1713,7 +1733,7 @@
         count: items.length,
         title: topIssue?.title ?? lane.empty,
         detail: topIssue
-          ? `${formatCount(topIssue.unique_review_count)}개 리뷰 · ${topDecision?.verb ?? plannerActionLabel(topIssue)}`
+          ? `${formatCount(topIssue.unique_review_count)}개 리뷰 · ${issueEvidenceLabel(topIssue)}`
           : lane.hint
       };
     });
@@ -2457,7 +2477,7 @@
       .map((issue, index) => [
         String(index + 1),
         issue.title,
-        `${formatCount(issue.unique_review_count)}개 리뷰 · 근거 ${formatCount(issue.evidence_count ?? 0)}개`,
+        `${formatCount(issue.unique_review_count)}개 리뷰 · ${issueEvidenceLabel(issue)}`,
         plannerActionLabel(issue),
         issueTone(issue)
       ]);
@@ -3151,7 +3171,7 @@
                   <p>{issue.summary}</p>
                   <div class="issue-stats">
                     <span>{formatCount(issue.unique_review_count)}개 리뷰</span>
-                    <span>연결 근거 {formatCount(issue.evidence_count ?? 0)}개</span>
+                    <span>{issueEvidenceLabel(issue)}</span>
                     <span>근거 강도 {issueStrengthLabel(issue)}</span>
                   </div>
                   <div class="cluster-tags">

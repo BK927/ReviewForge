@@ -158,7 +158,10 @@ planning cards.
 - `GET /api/claims` returns generated cluster-level claims. It accepts optional
   `app_id` and `cluster_id`.
 - `GET /api/issues` returns issue cards. It accepts optional `app_id`, `status`,
-  `intent`, `aspect`, and `limit`.
+  `intent`, `aspect`, and `limit`. Each card includes total linked
+  `evidence_count` plus `match_evidence_count`, `partial_evidence_count`,
+  `reject_evidence_count`, and `unverified_evidence_count` so planner-facing
+  UI can distinguish verified support from audit context.
 - `GET /api/issues/summary` returns issue counts, evidence counts, quarantined
   unit counts, and coverage for the latest run.
 - `GET /api/issues/{issue_id}/evidence` returns linked evidence units for one

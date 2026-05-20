@@ -730,7 +730,18 @@ def list_issues(
     sql = """
         SELECT
             i.*,
-            count(ie.id) AS evidence_count
+            count(ie.id) AS evidence_count,
+            sum(CASE WHEN ie.verifier_verdict = 'match' THEN 1 ELSE 0 END) AS match_evidence_count,
+            sum(CASE WHEN ie.verifier_verdict = 'partial' THEN 1 ELSE 0 END) AS partial_evidence_count,
+            sum(CASE WHEN ie.verifier_verdict = 'reject' THEN 1 ELSE 0 END) AS reject_evidence_count,
+            sum(
+                CASE
+                    WHEN ie.id IS NOT NULL
+                     AND (ie.verifier_verdict IS NULL OR ie.verifier_verdict NOT IN ('match', 'partial', 'reject'))
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS unverified_evidence_count
         FROM issues i
         LEFT JOIN issue_evidence ie ON ie.issue_id = i.id
     """
@@ -1522,6 +1533,10 @@ def _hydrate_issue_row(row: dict[str, Any]) -> dict[str, Any]:
     row["top_terms"] = _loads_list(row.get("top_terms"))
     row["warnings"] = _loads_list(row.get("warnings"))
     row["evidence_count"] = int(row.get("evidence_count") or 0)
+    row["match_evidence_count"] = int(row.get("match_evidence_count") or 0)
+    row["partial_evidence_count"] = int(row.get("partial_evidence_count") or 0)
+    row["reject_evidence_count"] = int(row.get("reject_evidence_count") or 0)
+    row["unverified_evidence_count"] = int(row.get("unverified_evidence_count") or 0)
     return row
 
 

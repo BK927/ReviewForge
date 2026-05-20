@@ -198,6 +198,10 @@ class Issue(BaseModel):
     recommended_action: str | None = None
     warnings: list[str] = Field(default_factory=list)
     evidence_count: int = 0
+    match_evidence_count: int = 0
+    partial_evidence_count: int = 0
+    reject_evidence_count: int = 0
+    unverified_evidence_count: int = 0
     source: str | None = None
     model: str | None = None
     created_at: datetime
