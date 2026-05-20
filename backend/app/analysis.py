@@ -75,6 +75,19 @@ class IssueAspect:
     recommended_action: str
 
 
+@dataclass(frozen=True)
+class ClaimAxisRule:
+    key: str
+    label: str
+    terms: tuple[str, ...]
+    target_axis_keys: tuple[str, ...]
+    definition: str
+    include_criteria: tuple[str, ...]
+    exclude_criteria: tuple[str, ...]
+    why_actionable: str
+    min_terms: int = 2
+
+
 THEMES = [
     Theme(
         "late_loop",
@@ -434,6 +447,215 @@ SUGGESTION_STOPWORDS = {
     "비주얼",
 }
 
+AXIS_TOKEN_BLOCKLIST = {
+    "중심",
+    "의견",
+    "중심 의견",
+    "ㅋㅋㅋ",
+    "ㅎㅎㅎ",
+    "lgbt",
+    "joguei",
+    "leia",
+    "adv",
+    "everyone",
+    "people",
+    "player",
+    "players",
+    "レビュー",
+    "遊戲",
+    "游戏",
+}
+
+CLAIM_AXIS_RULES = [
+    ClaimAxisRule(
+        key="route_guidance",
+        label="루트/선택지 안내와 세이브 편의",
+        terms=(
+            "route",
+            "routes",
+            "choice",
+            "choices",
+            "branch",
+            "guide",
+            "walkthrough",
+            "hint",
+            "save",
+            "gallery",
+            "루트",
+            "선택지",
+            "분기",
+            "공략",
+            "힌트",
+            "세이브",
+            "도감",
+            "路线",
+            "选择",
+            "攻略",
+            "存档",
+            "セーブ",
+            "攻略",
+        ),
+        target_axis_keys=("route_guidance", "chapter_replay", "story_logic", "content_volume"),
+        definition="분기 조건, 선택지 피드백, 저장/되돌리기, 공략 의존성이 플레이 이해와 반복 플레이에 미치는 평가입니다.",
+        include_criteria=("분기나 루트 진입 조건이 불명확하다는 주장", "세이브/챕터 선택/회상 기능이 부족하다는 주장", "공략 없이 엔딩이나 수집 요소를 회수하기 어렵다는 주장"),
+        exclude_criteria=("스토리 취향만 말하는 리뷰", "단순히 엔딩이 좋거나 싫다는 감상", "조작감이나 전투 UI 불만"),
+        why_actionable="힌트, 선택지 피드백, 세이브 슬롯, 챕터 선택 같은 구체적인 UX 개선 후보로 이어집니다.",
+    ),
+    ClaimAxisRule(
+        key="mystery_logic",
+        label="추리/재판 공정성과 납득감",
+        terms=(
+            "mystery",
+            "deduction",
+            "logic",
+            "trial",
+            "case",
+            "evidence",
+            "trick",
+            "reasoning",
+            "magic rule",
+            "danganronpa",
+            "추리",
+            "논리",
+            "재판",
+            "증거",
+            "트릭",
+            "마법",
+            "단간",
+            "개연성",
+            "억지",
+            "推理",
+            "逻辑",
+            "诡计",
+            "审判",
+            "裁判",
+            "証拠",
+        ),
+        target_axis_keys=("mystery_logic", "story_logic"),
+        definition="추리 과정, 증거 제시, 재판 전개, 규칙 설명이 플레이어에게 공정하고 납득 가능하게 받아들여지는지에 대한 평가입니다.",
+        include_criteria=("정답 도출 과정이 억지스럽거나 힌트가 부족하다는 주장", "증거와 결론의 연결이 약하다는 주장", "추리/재판 파트가 장점이라는 주장"),
+        exclude_criteria=("캐릭터 호감만 말하는 리뷰", "분량이나 가격 불만", "순수 번역 품질 문제"),
+        why_actionable="힌트 배치, 증거 설명, 반론 흐름, 규칙 튜토리얼을 조정할 우선순위로 바로 연결됩니다.",
+    ),
+    ClaimAxisRule(
+        key="update_completion",
+        label="완성도와 업데이트 신뢰",
+        terms=(
+            "update",
+            "updates",
+            "patch",
+            "roadmap",
+            "unfinished",
+            "incomplete",
+            "early access",
+            "complete",
+            "업데이트",
+            "패치",
+            "로드맵",
+            "미완성",
+            "완성도",
+            "텍스트",
+            "追加",
+            "更新",
+            "未完成",
+            "画饼",
+        ),
+        target_axis_keys=("update_completion", "content_volume", "content_missing"),
+        definition="현재 빌드가 충분히 완성되어 보이는지, 약속된 업데이트와 추가 콘텐츠를 신뢰할 수 있는지에 대한 평가입니다.",
+        include_criteria=("미완성감, 업데이트 대기, 로드맵 신뢰 문제", "패치 후 개선 또는 악화 언급", "추가 텍스트/루트/챕터 요구"),
+        exclude_criteria=("일반적인 스토리 감상", "플레이어가 직접 만든 모드 요구", "일회성 버그 제보"),
+        why_actionable="로드맵 문구, 패치 우선순위, 출시/얼리액세스 기대 관리의 판단 근거가 됩니다.",
+    ),
+    ClaimAxisRule(
+        key="ending_afterstory",
+        label="엔딩 후속/후일담 요구",
+        terms=(
+            "ending",
+            "endings",
+            "true ending",
+            "afterstory",
+            "after story",
+            "epilogue",
+            "sequel",
+            "엔딩",
+            "후일담",
+            "후속",
+            "에필로그",
+            "결말",
+            "结局",
+            "后日谈",
+            "エンディング",
+            "後日談",
+        ),
+        target_axis_keys=("bleak_ending_tone", "content_volume", "story_logic"),
+        definition="엔딩의 만족도, 후일담 요구, 결말 톤과 후속 콘텐츠 기대가 어떻게 형성되는지에 대한 평가입니다.",
+        include_criteria=("결말이 허무하거나 더 설명이 필요하다는 주장", "후일담·후속작·에필로그 요구", "엔딩 톤이 강점이라는 주장"),
+        exclude_criteria=("루트 진입 조건만 말하는 리뷰", "초반 스토리만 말하는 리뷰", "순수 플레이타임 불만"),
+        why_actionable="후일담 DLC, 엔딩 보강, 스토어 기대 관리, 후속작 훅을 검토할 수 있습니다.",
+    ),
+    ClaimAxisRule(
+        key="character_art",
+        label="캐릭터/아트/연출 매력",
+        terms=(
+            "character",
+            "characters",
+            "art",
+            "visual",
+            "cg",
+            "sprite",
+            "voice",
+            "acting",
+            "music",
+            "캐릭터",
+            "캐디",
+            "아트",
+            "일러",
+            "성우",
+            "더빙",
+            "연출",
+            "음악",
+            "角色",
+            "人设",
+            "立绘",
+            "配音",
+            "キャラ",
+            "ボイス",
+        ),
+        target_axis_keys=("character_voice", "martial_story", "story_logic"),
+        definition="캐릭터 디자인, 일러스트, 보이스, 음악, 장면 연출이 구매 만족과 팬덤 반응에 기여하는 정도입니다.",
+        include_criteria=("캐릭터·일러스트·성우·음악을 강점으로 언급", "특정 캐릭터나 연출이 만족/불만의 핵심이라는 주장", "아트 방향성이 구매 이유라는 주장"),
+        exclude_criteria=("UI 가독성 문제", "추리 논리 불만", "분량이나 가격 불만"),
+        why_actionable="스토어 소재, 캐릭터 상품성, 후속 콘텐츠 우선순위, 연출 보강 포인트로 활용할 수 있습니다.",
+    ),
+    ClaimAxisRule(
+        key="localization_readability",
+        label="번역/텍스트 가독성",
+        terms=(
+            "translation",
+            "localization",
+            "subtitle",
+            "typo",
+            "font",
+            "readability",
+            "번역",
+            "한글화",
+            "오역",
+            "자막",
+            "텍스트",
+            "가독성",
+            "翻译",
+            "本地化",
+            "字幕",
+            "読みづら",
+        ),
+        target_axis_keys=("localization_readability", "ui_onboarding"),
+        definition="번역 품질, 자막/텍스트 표시, 폰트와 문장 가독성이 이해와 몰입에 미치는 평가입니다.",
+        include_criteria=("번역 오류나 어색함", "자막·폰트·텍스트 가독성 문제", "언어 지원 품질에 대한 칭찬"),
+        exclude_criteria=("스토리 내용 자체의 호불호", "UI 조작 흐름 불만", "일반 성능 문제"),
+        why_actionable="언어별 QA, 폰트/자막 UI 개선, 번역 검수 우선순위로 바로 이어집니다.",
+    ),
+]
+
 STOPWORDS = {
     "the",
     "and",
@@ -743,6 +965,8 @@ def run_local_analysis(
             message += f" {issue_message}"
     else:
         groups = _enrich_cluster_insights(groups, app_id, False, llm_model)
+
+    axis_suggestions = _build_axis_suggestions(issue_units, issue_cards, _active_issue_aspects(app_id))
 
     with connect() as conn:
         _store_review_quality(conn, analysis_run_id, quality_rows)
@@ -1712,80 +1936,258 @@ def _build_axis_suggestions(
     aspects: list[IssueAspect],
     limit: int = 8,
 ) -> list[dict[str, Any]]:
-    existing_labels = {aspect.label.casefold() for aspect in aspects}
-    existing_keys = {aspect.key for aspect in aspects}
-    assigned_aspects = {str(card.get("aspect")) for card in cards}
-    candidate_units = [
-        unit
-        for unit in units
-        if not unit["is_quarantined"]
-        and unit["intent"] in {"complaint", "request", "bug", "praise"}
-        and (unit["aspect"] == "general" or unit["aspect"] not in assigned_aspects)
-    ]
-    if not candidate_units:
-        candidate_units = [
-            unit
-            for unit in units
-            if not unit["is_quarantined"]
-            and unit["intent"] in {"complaint", "request", "bug", "praise"}
-            and unit["aspect"] not in existing_keys
-        ]
+    aspects_by_key = {aspect.key: aspect for aspect in aspects}
+    persisted_axis_keys = _persisted_axis_keys()
+    target_aspects_by_key = {
+        key: aspect
+        for key, aspect in aspects_by_key.items()
+        if key in persisted_axis_keys
+    }
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for unit in candidate_units:
-        tokens = [
-            token
-            for token in _tokens(str(unit.get("unit_text") or ""))
-            if token not in STOPWORDS and token not in SUGGESTION_STOPWORDS and len(token) > 2
-        ]
-        if not tokens:
+
+    for card in cards:
+        card_units = list(card.get("evidence_units") or card.get("units") or [])
+        if not card_units:
             continue
-        key = tokens[0]
-        grouped[key].append(unit)
+        rule = _claim_axis_rule_for_members(card_units, strict=True)
+        if not rule:
+            continue
+        target_axis_key = _target_axis_key(rule, target_aspects_by_key)
+        if target_axis_key and target_axis_key == str(card.get("aspect") or ""):
+            continue
+        grouped[f"rule:{rule.key}"].extend(card_units)
+
+    for unit in units:
+        if unit.get("is_quarantined") or unit.get("intent") not in {"complaint", "request", "bug", "praise"}:
+            continue
+        rule = _claim_axis_rule_for_members([unit], strict=False)
+        if rule:
+            target_axis_key = _target_axis_key(rule, target_aspects_by_key)
+            if target_axis_key and target_axis_key == str(unit.get("aspect") or ""):
+                continue
+            grouped[f"rule:{rule.key}"].append(unit)
+            continue
+        if unit.get("aspect") == "general" or str(unit.get("aspect") or "") not in aspects_by_key:
+            token = _raw_signal_key(unit)
+            if token:
+                grouped[f"raw:{token}"].append(unit)
 
     suggestions: list[dict[str, Any]] = []
-    for token, members in grouped.items():
-        unique_ids = {unit["review_id"] for unit in members}
-        if len(unique_ids) < 3:
+    seen_keys: set[str] = set()
+    for group_key, members in grouped.items():
+        if not members:
             continue
-        top_terms = _issue_top_terms(members, 5)
-        label = _suggested_axis_label(top_terms, members)
-        if not label or label.casefold() in existing_labels:
+        suggestion = _claim_axis_suggestion(members, target_aspects_by_key)
+        if not suggestion:
             continue
-        language_counts = Counter(str(unit.get("language") or "unknown") for unit in members)
-        intent_counts = Counter(str(unit.get("intent") or "other") for unit in members)
-        examples = []
-        seen: set[str] = set()
-        for unit in sorted(members, key=lambda item: (-float(item.get("quality_score") or 0), str(item.get("review_id")))):
-            review_id = str(unit["review_id"])
-            if review_id in seen:
-                continue
-            examples.append(review_id)
-            seen.add(review_id)
-            if len(examples) >= 6:
-                break
-        suggestions.append(
-            {
-                "label": label,
-                "rationale": (
-                    f"{len(unique_ids)}개 리뷰에서 {', '.join(top_terms[:4]) or token} 표현이 함께 나왔습니다. "
-                    f"주요 신호는 {intent_counts.most_common(1)[0][0]}입니다."
-                ),
-                "suggested_pattern": "|".join(re.escape(term) for term in top_terms[:8]) or re.escape(token),
-                "evidence_count": len(unique_ids),
-                "language_counts": dict(language_counts),
-                "example_review_ids": examples,
-            }
+        dedupe_key = f"{suggestion['kind']}:{suggestion.get('canonical_label_ko') or suggestion['label']}"
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+        suggestions.append(suggestion)
+
+    return sorted(
+        suggestions,
+        key=lambda item: (
+            0 if item.get("quality_gate") == "pass" else 1,
+            0 if item.get("kind") == "merge_candidate" else 1,
+            -int(item.get("evidence_count") or 0),
+            str(item.get("label") or ""),
+        ),
+    )[:limit]
+
+
+def _claim_axis_suggestion(
+    members: list[dict[str, Any]],
+    aspects_by_key: dict[str, IssueAspect],
+) -> dict[str, Any] | None:
+    unique_ids = _unique_review_ids(members)
+    if len(unique_ids) < 3:
+        return None
+    language_counts = Counter(str(unit.get("language") or "unknown") for unit in members)
+    intent_counts = Counter(str(unit.get("intent") or "other") for unit in members)
+    top_terms = _claim_top_terms(members, 8)
+    examples = _axis_example_review_ids(members)
+    rule = _claim_axis_rule_for_members(members, strict=True)
+    if not rule:
+        return {
+            "label": "원문 신호 검토 필요",
+            "rationale": (
+                f"{len(unique_ids)}개 리뷰에서 비슷한 표현이 반복됐지만, 한국어 평가축으로 만들 만큼 "
+                "의미 단위가 안정적이지 않습니다."
+            ),
+            "suggested_pattern": "|".join(re.escape(term) for term in top_terms[:6]) or "",
+            "evidence_count": len(unique_ids),
+            "language_counts": dict(language_counts),
+            "example_review_ids": examples,
+            "kind": "raw_signal",
+            "canonical_label_ko": None,
+            "definition": None,
+            "include_criteria": [],
+            "exclude_criteria": [],
+            "evidence_claim_ids": examples,
+            "why_actionable": None,
+            "quality_gate": "fail",
+            "failure_reason": "반복 토큰은 있으나 기획 판단 단위로 해석할 충분한 주장 구조가 없습니다.",
+        }
+
+    target_axis_key = _target_axis_key(rule, aspects_by_key)
+    matched_terms = _matched_rule_terms(rule, members)
+    quality_gate, failure_reason = _axis_candidate_gate(rule, matched_terms, len(unique_ids), top_terms)
+    kind = "merge_candidate" if target_axis_key else "axis_candidate"
+    if quality_gate != "pass":
+        kind = "raw_signal"
+    target_label = aspects_by_key[target_axis_key].label if target_axis_key else None
+    action = "기존 평가축에 병합할 수 있습니다" if target_label else "게임별 평가축 후보로 검토할 수 있습니다"
+    return {
+        "label": rule.label if quality_gate == "pass" else "원문 신호 검토 필요",
+        "rationale": (
+            f"{len(unique_ids)}개 리뷰에서 {rule.label} 관련 주장이 반복됩니다. "
+            f"주요 언어는 {', '.join(language_counts.keys()) or 'unknown'}이고, "
+            f"주요 성격은 {intent_counts.most_common(1)[0][0]}입니다. {action}."
+        ),
+        "suggested_pattern": "|".join(re.escape(term) for term in matched_terms[:12]) or "|".join(
+            re.escape(term) for term in rule.terms[:8]
+        ),
+        "evidence_count": len(unique_ids),
+        "language_counts": dict(language_counts),
+        "example_review_ids": examples,
+        "kind": kind,
+        "canonical_label_ko": rule.label if quality_gate == "pass" else None,
+        "definition": rule.definition if quality_gate == "pass" else None,
+        "include_criteria": list(rule.include_criteria) if quality_gate == "pass" else [],
+        "exclude_criteria": list(rule.exclude_criteria) if quality_gate == "pass" else [],
+        "evidence_claim_ids": examples,
+        "why_actionable": rule.why_actionable if quality_gate == "pass" else None,
+        "quality_gate": quality_gate,
+        "failure_reason": failure_reason,
+        "target_axis_key": target_axis_key,
+    }
+
+
+def _claim_axis_rule_for_members(members: list[dict[str, Any]], strict: bool) -> ClaimAxisRule | None:
+    scored: list[tuple[int, ClaimAxisRule]] = []
+    for rule in CLAIM_AXIS_RULES:
+        matches = _matched_rule_terms(rule, members)
+        required = rule.min_terms if strict else 1
+        if len(matches) >= required:
+            scored.append((len(matches), rule))
+    if not scored:
+        return None
+    return sorted(scored, key=lambda item: (-item[0], item[1].key))[0][1]
+
+
+def _matched_rule_terms(rule: ClaimAxisRule, members: list[dict[str, Any]]) -> list[str]:
+    text = _claim_text_blob(members)
+    matched = []
+    for term in rule.terms:
+        normalized = term.casefold()
+        if normalized and normalized in text:
+            matched.append(term)
+    return matched
+
+
+def _claim_text_blob(members: list[dict[str, Any]]) -> str:
+    return " ".join(
+        str(unit.get("summary_ko") or unit.get("subissue") or unit.get("unit_text") or "")
+        for unit in members
+    ).casefold()
+
+
+def _target_axis_key(rule: ClaimAxisRule, aspects_by_key: dict[str, IssueAspect]) -> str | None:
+    for axis_key in rule.target_axis_keys:
+        if axis_key in aspects_by_key:
+            return axis_key
+    return None
+
+
+def _persisted_axis_keys() -> set[str]:
+    try:
+        with connect() as conn:
+            rows = conn.execute("SELECT key FROM analysis_axes WHERE status = 'active'").fetchall()
+    except Exception:
+        return set()
+    return {str(row[0]) for row in rows}
+
+
+def _axis_candidate_gate(
+    rule: ClaimAxisRule,
+    matched_terms: list[str],
+    evidence_count: int,
+    top_terms: list[str],
+) -> tuple[str, str | None]:
+    if evidence_count < 5:
+        return "fail", "서로 다른 리뷰 5개 이상의 근거가 필요합니다."
+    if len(matched_terms) < rule.min_terms:
+        return "fail", "같은 의미의 표현이 충분히 반복되지 않았습니다."
+    if not _valid_axis_label(rule.label):
+        return "fail", "한국어 평가축 라벨로 쓰기 어렵습니다."
+    if any(_looks_like_axis_noise(term) for term in top_terms[:3]):
+        return "fail", "대표 표현이 닉네임, 숫자, 저정보 토큰에 가깝습니다."
+    return "pass", None
+
+
+def _valid_axis_label(label: str) -> bool:
+    if not re.search(r"[가-힣]", label):
+        return False
+    if re.search(r"\d", label):
+        return False
+    if "중심 의견" in label:
+        return False
+    return 4 <= len(label.strip()) <= 80
+
+
+def _raw_signal_key(unit: dict[str, Any]) -> str:
+    for token in _claim_top_terms([unit], 4):
+        if not _looks_like_axis_noise(token):
+            return token
+    return ""
+
+
+def _claim_top_terms(members: list[dict[str, Any]], limit: int = 8) -> list[str]:
+    counter: Counter[str] = Counter()
+    for unit in members:
+        text = str(unit.get("summary_ko") or unit.get("unit_text") or "")
+        counter.update(
+            token
+            for token in _tokens(text)
+            if token not in STOPWORDS
+            and token not in SUGGESTION_STOPWORDS
+            and not _looks_like_axis_noise(token)
+            and len(token) > 2
         )
-    return sorted(suggestions, key=lambda item: item["evidence_count"], reverse=True)[:limit]
+    return [token for token, _ in counter.most_common(limit)]
 
 
-def _suggested_axis_label(top_terms: list[str], members: list[dict[str, Any]]) -> str:
-    if not top_terms:
-        return ""
-    intent = Counter(str(unit.get("intent") or "") for unit in members).most_common(1)[0][0]
-    head = "·".join(top_terms[:2])
-    suffix = "강점 후보" if intent == "praise" else "검토 후보"
-    return f"{head} {suffix}"[:80]
+def _looks_like_axis_noise(token: str) -> bool:
+    normalized = str(token or "").casefold().strip()
+    if not normalized or normalized in AXIS_TOKEN_BLOCKLIST:
+        return True
+    if re.fullmatch(r"[\d\W_]+", normalized):
+        return True
+    if re.fullmatch(r"\d+[a-z가-힣]*", normalized):
+        return True
+    if len(normalized) <= 2:
+        return True
+    return False
+
+
+def _axis_example_review_ids(members: list[dict[str, Any]], limit: int = 6) -> list[str]:
+    examples: list[str] = []
+    seen: set[str] = set()
+    for unit in sorted(members, key=lambda item: (-float(item.get("quality_score") or 0), str(item.get("review_id")))):
+        review_id = str(unit["review_id"])
+        if review_id in seen:
+            continue
+        examples.append(review_id)
+        seen.add(review_id)
+        if len(examples) >= limit:
+            break
+    return examples
+
+
+def _unique_review_ids(members: list[dict[str, Any]]) -> set[str]:
+    return {str(unit.get("review_id")) for unit in members if unit.get("review_id") is not None}
 
 
 def _normalize_review_text(text: str) -> str:
@@ -2561,9 +2963,12 @@ def _store_axis_suggestions(
         """
         INSERT INTO axis_suggestions (
             analysis_run_id, app_id, label, rationale, suggested_pattern,
-            evidence_count, language_counts, example_review_ids, status
+            evidence_count, language_counts, example_review_ids, kind,
+            canonical_label_ko, definition, include_criteria, exclude_criteria,
+            evidence_claim_ids, why_actionable, quality_gate, failure_reason,
+            status, target_axis_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
         """,
         [
             (
@@ -2575,11 +2980,39 @@ def _store_axis_suggestions(
                 suggestion["evidence_count"],
                 json.dumps(suggestion["language_counts"]),
                 json.dumps(suggestion["example_review_ids"]),
+                suggestion.get("kind", "raw_signal"),
+                suggestion.get("canonical_label_ko"),
+                suggestion.get("definition"),
+                json.dumps(suggestion.get("include_criteria") or []),
+                json.dumps(suggestion.get("exclude_criteria") or []),
+                json.dumps(suggestion.get("evidence_claim_ids") or []),
+                suggestion.get("why_actionable"),
+                suggestion.get("quality_gate", "fail"),
+                suggestion.get("failure_reason"),
+                _axis_id_for_key(conn, app_id, suggestion.get("target_axis_key")),
             )
             for suggestion in suggestions
         ],
     )
     return len(suggestions)
+
+
+def _axis_id_for_key(conn: duckdb.DuckDBPyConnection, app_id: str | None, axis_key: Any) -> int | None:
+    if not axis_key:
+        return None
+    row = conn.execute(
+        """
+        SELECT id
+        FROM analysis_axes
+        WHERE key = ?
+          AND status = 'active'
+          AND (scope IN ('common', 'genre') OR app_id = ?)
+        ORDER BY CASE scope WHEN 'game' THEN 1 WHEN 'genre' THEN 2 ELSE 3 END, id
+        LIMIT 1
+        """,
+        [str(axis_key), str(app_id or "")],
+    ).fetchone()
+    return int(row[0]) if row else None
 
 
 def _store_analysis_outputs(

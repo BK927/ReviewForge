@@ -230,6 +230,15 @@ CREATE TABLE IF NOT EXISTS axis_suggestions (
     evidence_count INTEGER NOT NULL DEFAULT 0,
     language_counts JSON,
     example_review_ids JSON,
+    kind VARCHAR NOT NULL DEFAULT 'raw_signal',
+    canonical_label_ko VARCHAR,
+    definition TEXT,
+    include_criteria JSON,
+    exclude_criteria JSON,
+    evidence_claim_ids JSON,
+    why_actionable TEXT,
+    quality_gate VARCHAR NOT NULL DEFAULT 'fail',
+    failure_reason TEXT,
     status VARCHAR NOT NULL DEFAULT 'pending',
     target_axis_id BIGINT,
     created_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
@@ -338,6 +347,17 @@ def run_migrations(conn: duckdb.DuckDBPyConnection) -> None:
     _add_column_if_missing(conn, "issue_evidence", "summary_ko", "TEXT")
     _add_column_if_missing(conn, "issue_evidence", "subissue", "VARCHAR")
     _add_column_if_missing(conn, "issue_evidence", "verifier_reason", "TEXT")
+    _add_column_if_missing(conn, "axis_suggestions", "kind", "VARCHAR")
+    _add_column_if_missing(conn, "axis_suggestions", "canonical_label_ko", "VARCHAR")
+    _add_column_if_missing(conn, "axis_suggestions", "definition", "TEXT")
+    _add_column_if_missing(conn, "axis_suggestions", "include_criteria", "JSON")
+    _add_column_if_missing(conn, "axis_suggestions", "exclude_criteria", "JSON")
+    _add_column_if_missing(conn, "axis_suggestions", "evidence_claim_ids", "JSON")
+    _add_column_if_missing(conn, "axis_suggestions", "why_actionable", "TEXT")
+    _add_column_if_missing(conn, "axis_suggestions", "quality_gate", "VARCHAR")
+    _add_column_if_missing(conn, "axis_suggestions", "failure_reason", "TEXT")
+    conn.execute("UPDATE axis_suggestions SET kind = COALESCE(kind, 'raw_signal')")
+    conn.execute("UPDATE axis_suggestions SET quality_gate = COALESCE(quality_gate, 'fail')")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS analysis_axes (
@@ -369,6 +389,15 @@ def run_migrations(conn: duckdb.DuckDBPyConnection) -> None:
             evidence_count INTEGER NOT NULL DEFAULT 0,
             language_counts JSON,
             example_review_ids JSON,
+            kind VARCHAR NOT NULL DEFAULT 'raw_signal',
+            canonical_label_ko VARCHAR,
+            definition TEXT,
+            include_criteria JSON,
+            exclude_criteria JSON,
+            evidence_claim_ids JSON,
+            why_actionable TEXT,
+            quality_gate VARCHAR NOT NULL DEFAULT 'fail',
+            failure_reason TEXT,
             status VARCHAR NOT NULL DEFAULT 'pending',
             target_axis_id BIGINT,
             created_at TIMESTAMP NOT NULL DEFAULT current_timestamp,

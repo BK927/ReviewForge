@@ -949,7 +949,11 @@ def update_axis(axis_id: int, payload: AxisUpdate) -> dict[str, Any] | None:
         return rows_to_dicts(conn.execute("SELECT * FROM analysis_axes WHERE id = ?", [axis_id]))[0]
 
 
-def list_axis_suggestions(app_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+def list_axis_suggestions(
+    app_id: str | None = None,
+    status: str | None = None,
+    include_raw: bool = False,
+) -> list[dict[str, Any]]:
     resolved_app_id = resolve_app_id(app_id)
     with connect() as conn:
         latest_run_id = _latest_completed_issue_run_id(conn, resolved_app_id)
@@ -957,6 +961,9 @@ def list_axis_suggestions(app_id: str | None = None, status: str | None = None) 
             return []
         clauses = ["app_id = ?", "analysis_run_id = ?", "evidence_count >= 5"]
         params: list[Any] = [resolved_app_id, latest_run_id]
+        if not include_raw:
+            clauses.append("quality_gate = 'pass'")
+            clauses.append("kind IN ('merge_candidate', 'axis_candidate', 'one_off_insight')")
         if status:
             clauses.append("status = ?")
             params.append(status)
@@ -983,7 +990,11 @@ def approve_axis_suggestion(suggestion_id: int) -> dict[str, Any] | None:
         if not rows:
             return None
         suggestion = _hydrate_axis_suggestion(rows[0])
-        key = _axis_key_from_label(str(suggestion["label"]))
+        if suggestion.get("quality_gate") != "pass" or suggestion.get("kind") != "axis_candidate":
+            raise ValueError("Only passed axis candidates can be approved as new axes.")
+        label = str(suggestion.get("canonical_label_ko") or suggestion["label"])
+        definition = str(suggestion.get("definition") or suggestion["rationale"])
+        key = _axis_key_from_label(label)
         axis_id = conn.execute(
             """
             INSERT INTO analysis_axes (
@@ -995,10 +1006,10 @@ def approve_axis_suggestion(suggestion_id: int) -> dict[str, Any] | None:
             """,
             [
                 key,
-                suggestion["label"],
-                suggestion["rationale"],
+                label,
+                definition,
                 suggestion["suggested_pattern"],
-                "승인한 평가축으로 재분석해 실제 문제/강점인지 확인하세요.",
+                suggestion.get("why_actionable") or "승인한 평가축으로 재분석해 실제 문제/강점인지 확인하세요.",
                 suggestion.get("app_id"),
                 utcnow(),
                 utcnow(),
@@ -1040,6 +1051,18 @@ def ignore_axis_suggestion(suggestion_id: int) -> dict[str, Any] | None:
             return None
         conn.execute(
             "UPDATE axis_suggestions SET status = 'ignored', updated_at = ? WHERE id = ?",
+            [utcnow(), suggestion_id],
+        )
+        row = rows_to_dicts(conn.execute("SELECT * FROM axis_suggestions WHERE id = ?", [suggestion_id]))[0]
+    return _hydrate_axis_suggestion(row)
+
+
+def keep_axis_suggestion(suggestion_id: int) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not conn.execute("SELECT 1 FROM axis_suggestions WHERE id = ?", [suggestion_id]).fetchone():
+            return None
+        conn.execute(
+            "UPDATE axis_suggestions SET status = 'kept', updated_at = ? WHERE id = ?",
             [utcnow(), suggestion_id],
         )
         row = rows_to_dicts(conn.execute("SELECT * FROM axis_suggestions WHERE id = ?", [suggestion_id]))[0]
@@ -1501,6 +1524,11 @@ def _hydrate_issue_row(row: dict[str, Any]) -> dict[str, Any]:
 def _hydrate_axis_suggestion(row: dict[str, Any]) -> dict[str, Any]:
     row["language_counts"] = _loads_int_dict(row.get("language_counts"))
     row["example_review_ids"] = _loads_list(row.get("example_review_ids"))
+    row["include_criteria"] = _loads_list(row.get("include_criteria"))
+    row["exclude_criteria"] = _loads_list(row.get("exclude_criteria"))
+    row["evidence_claim_ids"] = _loads_list(row.get("evidence_claim_ids"))
+    row["kind"] = row.get("kind") or "raw_signal"
+    row["quality_gate"] = row.get("quality_gate") or "fail"
     return row
 
 

@@ -250,6 +250,15 @@
     evidence_count: number;
     language_counts?: Record<string, number>;
     example_review_ids?: string[];
+    kind?: string;
+    canonical_label_ko?: string | null;
+    definition?: string | null;
+    include_criteria?: string[];
+    exclude_criteria?: string[];
+    evidence_claim_ids?: string[];
+    why_actionable?: string | null;
+    quality_gate?: string;
+    failure_reason?: string | null;
     status: string;
     target_axis_id?: number | null;
     created_at: string;
@@ -776,6 +785,7 @@
   let clusterToneFilter: ClusterToneFilter = 'all';
   let issueQuery = '';
   let issueStatusFilter: IssueStatusFilter = 'all';
+  let showRawAxisSuggestions = false;
   let showGameDialog = false;
   let showSettingsPanel = false;
   let gameForm = {
@@ -825,7 +835,10 @@
   $: issueMetrics = buildIssueMetrics(issueSummary, dashboard);
   $: issueAuditRows = buildIssueAuditRows(issueSummary, dashboard);
   $: activeAxes = axes.filter((axis) => axis.status === 'active');
-  $: pendingAxisSuggestions = axisSuggestions.filter((suggestion) => suggestion.status === 'pending');
+  $: pendingAxisSuggestions = axisSuggestions.filter(
+    (suggestion) => suggestion.status === 'pending' && (showRawAxisSuggestions || suggestion.quality_gate !== 'fail')
+  );
+  $: visibleAxisSuggestions = axisSuggestions.filter((suggestion) => showRawAxisSuggestions || suggestion.quality_gate !== 'fail');
   $: axisMetrics = buildAxisMetrics(activeAxes, pendingAxisSuggestions, issues);
   $: clusterMetrics = buildClusterMetrics(clusters, clusterSourceText);
   $: clusterFocusRows = buildClusterFocusRows(clusters);
@@ -931,6 +944,7 @@
       gameProjects[0]?.appId ??
       DEFAULT_APP_ID;
     const appQuery = `app_id=${encodeURIComponent(activeAppId)}`;
+    const axisSuggestionQuery = `${appQuery}${showRawAxisSuggestions ? '&include_raw=true' : ''}`;
 
     const [
       dashboardResult,
@@ -957,7 +971,7 @@
       get<ApiClaim[]>(`/claims?${appQuery}`, '주장'),
       get<ApiIssue[]>(`/issues?${appQuery}`, '이슈'),
       get<ApiAxis[]>(`/axes?${appQuery}`, '평가축'),
-      get<ApiAxisSuggestion[]>(`/axis-suggestions?${appQuery}`, '평가축 후보'),
+      get<ApiAxisSuggestion[]>(`/axis-suggestions?${axisSuggestionQuery}`, '평가축 후보'),
       get<ApiIssueSummary>(`/issues/summary?${appQuery}`, '이슈 요약'),
       get<ApiReport[]>(`/reports?${appQuery}`, '리포트'),
       get<ApiAnalysisRun[]>(`/analysis-runs?${appQuery}`, '분석 이력'),
@@ -1252,6 +1266,37 @@
     }
   }
 
+  async function mergeAxisSuggestion(suggestion: ApiAxisSuggestion) {
+    if (!suggestion.target_axis_id) return;
+    axisState = '기존 평가축에 병합 중';
+    try {
+      await requestJson<ApiAxisSuggestion>(`/axis-suggestions/${suggestion.id}/merge?target_axis_id=${suggestion.target_axis_id}`, {
+        method: 'POST'
+      });
+      axisState = '기존 평가축에 병합했습니다. 다음 분석에서 같은 축으로 더 안정적으로 묶입니다.';
+      await loadApiData(selectedAppId);
+    } catch {
+      axisState = '평가축 병합에 실패했습니다.';
+    }
+  }
+
+  async function keepAxisSuggestion(suggestionId: number) {
+    axisState = '일회성 인사이트로 보관 중';
+    try {
+      await requestJson<ApiAxisSuggestion>(`/axis-suggestions/${suggestionId}/keep`, { method: 'POST' });
+      axisState = '평가축으로 늘리지는 않고 일회성 인사이트로 보관했습니다.';
+      await loadApiData(selectedAppId);
+    } catch {
+      axisState = '일회성 보관에 실패했습니다.';
+    }
+  }
+
+  async function toggleRawAxisSuggestions() {
+    showRawAxisSuggestions = !showRawAxisSuggestions;
+    axisState = showRawAxisSuggestions ? '진단용 원시 후보까지 불러오는 중' : '품질 통과 후보만 불러오는 중';
+    await loadApiData(selectedAppId);
+  }
+
   async function toggleAxis(axis: ApiAxis) {
     const nextStatus = axis.status === 'active' ? 'disabled' : 'active';
     axisState = `${axis.label} 상태 변경 중`;
@@ -1376,6 +1421,9 @@
   function setTab(tab: TabId) {
     activeTab = tab;
     window.scrollTo({ top: 0, behavior: 'auto' });
+    window.requestAnimationFrame(() => {
+      document.querySelector('.content')?.scrollTo({ top: 0, behavior: 'auto' });
+    });
   }
 
   function mapApiGame(game: ApiGame): GameProject {
@@ -1687,7 +1735,27 @@
     if (value === 'approved') return '승인됨';
     if (value === 'merged') return '병합됨';
     if (value === 'ignored') return '무시됨';
+    if (value === 'kept') return '보관됨';
     return value || '미상';
+  }
+
+  function axisSuggestionKindLabel(value?: string) {
+    if (value === 'merge_candidate') return '기존 축 병합 후보';
+    if (value === 'axis_candidate') return '새 게임별 축 후보';
+    if (value === 'one_off_insight') return '일회성 인사이트';
+    if (value === 'raw_signal') return '진단용 원시 신호';
+    return '미분류 주장';
+  }
+
+  function axisSuggestionGateLabel(value?: string) {
+    if (value === 'pass') return '품질 통과';
+    if (value === 'fail') return '숨김 권장';
+    return '검토 필요';
+  }
+
+  function axisSuggestionTargetLabel(suggestion: ApiAxisSuggestion) {
+    const axis = axes.find((item) => item.id === suggestion.target_axis_id);
+    return axis ? axis.label : '기존 평가축';
   }
 
   function languageCountLabel(value?: Record<string, number>) {
@@ -1899,7 +1967,7 @@
     return [
       ['활성 평가축', formatCount(axisItems.length), `공통 ${formatCount(commonAxes.length)} · 게임별 ${formatCount(gameAxes.length)}`],
       ['이번 분석 사용', formatCount(usedAxes.length), usedAxes.length ? usedAxes.slice(0, 3).map((axis) => axis.label).join(' · ') : '분석 대기'],
-      ['AI 후보', formatCount(suggestions.length), suggestions.length ? '승인/무시 필요' : '대기열 없음'],
+      ['미분류 주장', formatCount(suggestions.length), suggestions.length ? '병합/보관 필요' : '대기열 없음'],
       ['하드코딩 탈피', axisItems.length ? 'DB 관리 중' : '초기화 필요', axisItems.length ? '준비' : '대기']
     ];
   }
@@ -3033,7 +3101,7 @@
           <PageIntro title="근거 리뷰" subtitle="인사이트 카드가 어떤 실제 리뷰에서 나왔는지 한국어 요약과 원문을 함께 확인합니다.">
             <span class="status">인사이트 근거 {formatCount(issueEvidenceItems.length)}개 · 클러스터 근거 {formatCount(evidenceItems.length)}개</span>
           </PageIntro>
-          <section class="control-grid">
+          <section class="control-grid evidence-review-grid">
             <div class="panel form-panel">
               <div class="section-head"><div><h2>선택 인사이트 근거</h2><p>{selectedIssue ? selectedIssue.title : '인사이트 보드에서 카드를 선택하세요.'}</p></div></div>
               <div class="truth-list">
@@ -3082,7 +3150,7 @@
             <span class="status">{axisState}</span>
           </PageIntro>
           <MetricStrip items={axisMetrics} />
-          <section class="detail-grid">
+          <section class="detail-grid axis-management-grid">
             <section class="panel">
               <div class="section-head">
                 <div>
@@ -3116,31 +3184,63 @@
             <section class="panel">
               <div class="section-head">
                 <div>
-                  <h2>AI 추천 평가축</h2>
-                  <p>기존 평가축으로 설명되지 않은 반복 표현입니다. 승인하면 다음 분석부터 쓰입니다.</p>
+                  <h2>미분류 주장 큐</h2>
+                  <p>자동 분석이 평가축으로 확정하지 못한 반복 주장입니다. 통과 후보만 기본 표시하고, 원시 토큰은 진단용으로 숨깁니다.</p>
                 </div>
-                <span class="status">{formatCount(pendingAxisSuggestions.length)}개 대기</span>
+                <div class="head-actions">
+                  <span class="status">{formatCount(pendingAxisSuggestions.length)}개 대기</span>
+                  <button class="ghost-button compact" type="button" on:click={toggleRawAxisSuggestions}>
+                    {showRawAxisSuggestions ? '원시 숨김' : '원시 보기'}
+                  </button>
+                </div>
               </div>
               <div class="axis-list">
-                {#each axisSuggestions as suggestion}
+                {#each visibleAxisSuggestions as suggestion}
                   <article class="axis-item">
                     <div>
                       <header>
-                        <strong>{suggestion.label}</strong>
+                        <strong>{suggestion.canonical_label_ko ?? suggestion.label}</strong>
+                        <span class="cluster-tag">{axisSuggestionKindLabel(suggestion.kind)}</span>
+                        <span class={`sentiment ${suggestion.quality_gate === 'pass' ? 'good' : 'mixed'}`}>{axisSuggestionGateLabel(suggestion.quality_gate)}</span>
                         <span class={`sentiment ${suggestion.status === 'pending' ? 'mixed' : 'good'}`}>{axisStatusLabel(suggestion.status)}</span>
                       </header>
-                      <p>{suggestion.rationale}</p>
+                      <p>{suggestion.definition ?? suggestion.rationale}</p>
+                      {#if suggestion.why_actionable}
+                        <small>{suggestion.why_actionable}</small>
+                      {/if}
+                      {#if suggestion.include_criteria?.length}
+                        <div class="mini-list">
+                          {#each suggestion.include_criteria.slice(0, 3) as item}
+                            <span>{item}</span>
+                          {/each}
+                        </div>
+                      {/if}
+                      {#if suggestion.failure_reason}
+                        <small>숨김 사유: {suggestion.failure_reason}</small>
+                      {/if}
                       <small>{formatCount(suggestion.evidence_count)}개 리뷰 · {languageCountLabel(suggestion.language_counts)}</small>
                     </div>
                     {#if suggestion.status === 'pending'}
                       <div class="axis-actions">
-                        <button class="primary-button compact" type="button" on:click={() => approveAxisSuggestion(suggestion.id)}>승인</button>
-                        <button class="ghost-button compact" type="button" on:click={() => ignoreAxisSuggestion(suggestion.id)}>무시</button>
+                        {#if suggestion.kind === 'merge_candidate' && suggestion.target_axis_id}
+                          <button class="primary-button compact" type="button" on:click={() => mergeAxisSuggestion(suggestion)}>
+                            {axisSuggestionTargetLabel(suggestion)}에 병합
+                          </button>
+                        {/if}
+                        {#if suggestion.kind === 'axis_candidate' && suggestion.quality_gate === 'pass'}
+                          <button class="primary-button compact" type="button" on:click={() => approveAxisSuggestion(suggestion.id)}>게임별 축 승인</button>
+                        {/if}
+                        {#if suggestion.quality_gate === 'pass'}
+                          <button class="ghost-button compact" type="button" on:click={() => keepAxisSuggestion(suggestion.id)}>일회성 보관</button>
+                        {/if}
+                        <button class="ghost-button compact" type="button" on:click={() => ignoreAxisSuggestion(suggestion.id)}>
+                          {suggestion.quality_gate === 'fail' ? '잡음 차단' : '무시'}
+                        </button>
                       </div>
                     {/if}
                   </article>
                 {:else}
-                  <div class="empty-state">새 평가축 후보가 없습니다. 분석을 실행하면 기존 축으로 설명되지 않는 반복 신호가 여기에 표시됩니다.</div>
+                  <div class="empty-state">품질 기준을 통과한 미분류 주장이 없습니다. 이 상태가 정상일 수 있습니다. 이미 이슈 보드가 잘 설명하고 있거나, 후보가 잡음으로 걸러진 것입니다.</div>
                 {/each}
               </div>
             </section>

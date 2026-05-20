@@ -282,6 +282,15 @@ class AxisSuggestion(BaseModel):
     evidence_count: int
     language_counts: dict[str, int] = Field(default_factory=dict)
     example_review_ids: list[str] = Field(default_factory=list)
+    kind: str = "raw_signal"
+    canonical_label_ko: str | None = None
+    definition: str | None = None
+    include_criteria: list[str] = Field(default_factory=list)
+    exclude_criteria: list[str] = Field(default_factory=list)
+    evidence_claim_ids: list[str] = Field(default_factory=list)
+    why_actionable: str | None = None
+    quality_gate: str = "fail"
+    failure_reason: str | None = None
     status: str
     target_axis_id: int | None = None
     created_at: datetime

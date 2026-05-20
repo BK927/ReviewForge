@@ -215,13 +215,20 @@ def update_axis(axis_id: int, payload: AxisUpdate) -> dict:
 
 
 @app.get("/api/axis-suggestions", response_model=list[AxisSuggestion])
-def axis_suggestions(app_id: str | None = None, status: str | None = None) -> list[dict]:
-    return repository.list_axis_suggestions(app_id, status)
+def axis_suggestions(
+    app_id: str | None = None,
+    status: str | None = None,
+    include_raw: bool = False,
+) -> list[dict]:
+    return repository.list_axis_suggestions(app_id, status, include_raw)
 
 
 @app.post("/api/axis-suggestions/{suggestion_id}/approve", response_model=AxisSuggestion)
 def approve_axis_suggestion(suggestion_id: int) -> dict:
-    suggestion = repository.approve_axis_suggestion(suggestion_id)
+    try:
+        suggestion = repository.approve_axis_suggestion(suggestion_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not suggestion:
         raise HTTPException(status_code=404, detail="Axis suggestion not found")
     return suggestion
@@ -238,6 +245,14 @@ def merge_axis_suggestion(suggestion_id: int, target_axis_id: int = Query(..., g
 @app.post("/api/axis-suggestions/{suggestion_id}/ignore", response_model=AxisSuggestion)
 def ignore_axis_suggestion(suggestion_id: int) -> dict:
     suggestion = repository.ignore_axis_suggestion(suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Axis suggestion not found")
+    return suggestion
+
+
+@app.post("/api/axis-suggestions/{suggestion_id}/keep", response_model=AxisSuggestion)
+def keep_axis_suggestion(suggestion_id: int) -> dict:
+    suggestion = repository.keep_axis_suggestion(suggestion_id)
     if not suggestion:
         raise HTTPException(status_code=404, detail="Axis suggestion not found")
     return suggestion
