@@ -416,8 +416,16 @@ NEGATIVE_CUE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 REQUEST_CUE_PATTERN = re.compile(
-    r"please|pls|should|need to|needs to|must|add|fix|hope|wish|would like|bring back|"
+    r"please|pls|should|need to|needs to|must|add|fix|hope|wish|want|would like|bring back|"
     r"제발|추가|고쳐|고쳐줘|개선|필요|바람|원함|돌려",
+    re.IGNORECASE,
+)
+EXPANSION_REQUEST_CUE_PATTERN = re.compile(
+    r"(would love|would like|wish|hope|want|please|add|need|needs|"
+    r"더|추가|원함|바람|もっと|欲しい|ほしい|希望|增加).{0,48}"
+    r"(route|routes|chapter|chapters|content|ending|endings|story|character|characters|"
+    r"루트|챕터|콘텐츠|컨텐츠|엔딩|스토리|캐릭터|ルート|チャプター|コンテンツ|エンディング|"
+    r"章节|路线|内容|结局|角色)",
     re.IGNORECASE,
 )
 PRAISE_CUE_PATTERN = re.compile(
@@ -1337,27 +1345,34 @@ def _split_review_units(text: str) -> list[str]:
     compact = re.sub(r"\s+", " ", str(text or "")).strip()
     if not compact:
         return []
-    parts = re.split(r"(?<=[.!?。！？])\s+|\n+|[•●]|(?:\s+-\s+)", compact)
+    parts = re.split(r"(?<=[。！？])|(?<=[.!?])\s+|\n+|[•●]|(?:\s+-\s+)", compact)
     cleaned = [part.strip(" \t\r\n\"'“”‘’") for part in parts if part.strip()]
     if not cleaned:
         cleaned = [compact]
     merged: list[str] = []
     for part in cleaned:
-        if len(part) < 24 and merged:
+        if len(part) < 24 and merged and not _contains_cjk_text(part):
             merged[-1] = f"{merged[-1]} {part}".strip()
         else:
             merged.append(part)
     return [part[:420] for part in merged[:8]]
 
 
+def _contains_cjk_text(text: str) -> bool:
+    return bool(re.search(r"[\u3040-\u30ff\u3400-\u9fff]", text))
+
+
 def _issue_intent(text: str, voted_up: bool) -> str:
     lowered = text.casefold()
     has_negative = bool(NEGATIVE_CUE_PATTERN.search(lowered))
     has_request = bool(REQUEST_CUE_PATTERN.search(lowered))
+    has_expansion_request = bool(EXPANSION_REQUEST_CUE_PATTERN.search(lowered))
     has_praise = bool(PRAISE_CUE_PATTERN.search(lowered))
     has_bug = bool(BUG_CUE_PATTERN.search(lowered))
     if has_bug and (has_negative or has_request or not voted_up):
         return "bug"
+    if voted_up and has_expansion_request:
+        return "request"
     if has_request and (has_negative or not voted_up):
         return "request"
     if has_negative or (not voted_up and len(_tokens(text)) >= 4):
@@ -1465,7 +1480,8 @@ def _build_issue_card(
     intent_counts = Counter(unit["intent"] for unit in members)
     language_counts = Counter(str(unit.get("language") or "unknown") for unit in members)
     avg_quality = sum(float(unit["quality_score"]) for unit in members) / len(members)
-    evidence_units = _select_issue_evidence_units(members, intent)
+    focus_rule = _issue_focus_rule(members, aspect)
+    evidence_units = _select_issue_evidence_units(members, intent, focus_rule=focus_rule)
     evidence_count = len(evidence_units)
     support_score = min(math.log1p(len(unique_review_ids)) / math.log(81), 1.0)
     evidence_score = min(evidence_count / 5, 1.0)
@@ -1503,7 +1519,7 @@ def _build_issue_card(
     )
     aspect_spec = _issue_aspect_spec(aspect, app_id, aspects)
     top_terms = _issue_top_terms(members)
-    focus_rule = _issue_focus_rule(evidence_units or members, aspect)
+    focus_rule = focus_rule or _issue_focus_rule(evidence_units or members, aspect)
     title = _issue_title(aspect_spec, intent, focus_rule)
     summary = _issue_summary(aspect_spec, intent, members, positive_ratio, focus_rule)
     return {
@@ -1851,7 +1867,12 @@ def _consistent_issue_verdict(unit: dict[str, Any], card: dict[str, Any], verdic
     return "match"
 
 
-def _select_issue_evidence_units(members: list[dict[str, Any]], intent: str, limit: int = 8) -> list[dict[str, Any]]:
+def _select_issue_evidence_units(
+    members: list[dict[str, Any]],
+    intent: str,
+    limit: int = 8,
+    focus_rule: ClaimAxisRule | None = None,
+) -> list[dict[str, Any]]:
     def preferred(unit: dict[str, Any]) -> bool:
         if intent == "praise":
             return unit["intent"] == "praise" and bool(unit["voted_up"])
@@ -1861,6 +1882,7 @@ def _select_issue_evidence_units(members: list[dict[str, Any]], intent: str, lim
     candidates = sorted(
         candidates,
         key=lambda unit: (
+            -_focus_rule_match_count(unit, focus_rule),
             0 if unit["intent"] == intent else 1,
             0 if intent != "praise" and not bool(unit.get("voted_up")) else 1,
             -float(unit["quality_score"]),
@@ -1880,7 +1902,7 @@ def _select_issue_evidence_units(members: list[dict[str, Any]], intent: str, lim
         language = str(unit.get("language") or "unknown")
         if language_counts[language] >= max(2, limit // 3) and len(selected) < limit - 2:
             continue
-        selected.append(unit)
+        selected.append(_issue_evidence_unit(unit, focus_rule))
         seen_hashes.add(text_hash)
         seen_reviews.add(unit["review_id"])
         language_counts[language] += 1
@@ -1891,12 +1913,25 @@ def _select_issue_evidence_units(members: list[dict[str, Any]], intent: str, lim
             text_hash = str(unit.get("text_hash") or _text_hash(str(unit.get("unit_text") or "")))
             if text_hash in seen_hashes or unit["review_id"] in seen_reviews:
                 continue
-            selected.append(unit)
+            selected.append(_issue_evidence_unit(unit, focus_rule))
             seen_hashes.add(text_hash)
             seen_reviews.add(unit["review_id"])
             if len(selected) >= limit:
                 break
     return selected
+
+
+def _focus_rule_match_count(unit: dict[str, Any], focus_rule: ClaimAxisRule | None) -> int:
+    if not focus_rule:
+        return 0
+    return len(_matched_rule_terms(focus_rule, [unit]))
+
+
+def _issue_evidence_unit(unit: dict[str, Any], focus_rule: ClaimAxisRule | None) -> dict[str, Any]:
+    evidence_unit = dict(unit)
+    if focus_rule and _focus_rule_match_count(evidence_unit, focus_rule):
+        evidence_unit.setdefault("subissue", focus_rule.label)
+    return evidence_unit
 
 
 def _issue_status(
@@ -2238,10 +2273,18 @@ def _matched_rule_terms(rule: ClaimAxisRule, members: list[dict[str, Any]]) -> l
     text = _claim_text_blob(members)
     matched = []
     for term in rule.terms:
-        normalized = term.casefold()
-        if normalized and normalized in text:
+        if _term_matches_text(term, text):
             matched.append(term)
     return matched
+
+
+def _term_matches_text(term: str, text: str) -> bool:
+    normalized = term.casefold().strip()
+    if not normalized:
+        return False
+    if re.fullmatch(r"[a-z0-9][a-z0-9 +:_/-]*", normalized):
+        return bool(re.search(rf"(?<![a-z0-9]){re.escape(normalized)}(?![a-z0-9])", text))
+    return normalized in text
 
 
 def _claim_text_blob(members: list[dict[str, Any]]) -> str:

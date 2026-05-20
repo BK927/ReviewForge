@@ -909,6 +909,14 @@
   $: issueMetrics = buildIssueMetrics(issueSummary, dashboard);
   $: issueAuditRows = buildIssueAuditRows(issueSummary, dashboard);
   $: planningLanes = buildPlanningLanes(issues);
+  $: if (
+    selectedIssue &&
+    issueEvidenceFilter === 'match' &&
+    (selectedIssue.match_evidence_count ?? 0) === 0 &&
+    (selectedIssue.evidence_count ?? 0) > 0
+  ) {
+    issueEvidenceFilter = 'all';
+  }
   $: activeAxes = axes.filter((axis) => axis.status === 'active');
   $: pendingAxisSuggestions = axisSuggestions.filter(
     (suggestion) => suggestion.status === 'pending' && (showRawAxisSuggestions || suggestion.quality_gate !== 'fail')
@@ -3431,7 +3439,7 @@
                   </div>
                   <div>
                     <strong>검증 분포</strong>
-                    <p>AI/규칙 요약이 원문과 맞는지 보는 감사 신호입니다. 기본 목록은 검증 통과만 보여줍니다.</p>
+                    <p>AI/규칙 요약이 원문과 맞는지 보는 감사 신호입니다. 검증 통과가 없으면 전체 근거를 열어 하위 의견을 먼저 확인합니다.</p>
                     <div class="verdict-strip">
                       <span class="good">통과 {formatCount(issueEvidenceStats.match)}</span>
                       <span class="mixed">부분 {formatCount(issueEvidenceStats.partial)}</span>

@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 
     from fastapi.testclient import TestClient
     from backend.app.main import app
-    from backend.app.analysis import IssueAspect, _build_issue_card
+    from backend.app.analysis import IssueAspect, _build_issue_card, _issue_intent, _split_review_units
 
     def issue_unit(review_id, text, intent, aspect, voted_up=False):
         return {
@@ -30,6 +30,11 @@ with tempfile.TemporaryDirectory() as tmpdir:
             "quality_score": 0.9,
             "text_hash": f"hash-{review_id}",
         }
+
+    cjk_units = _split_review_units("序盤は楽しい。後半は説明不足！それでもキャラは良い。")
+    assert len(cjk_units) == 3
+    assert _issue_intent("I love the characters and music.", True) == "praise"
+    assert _issue_intent("I love the story and would love more routes and chapters.", True) == "request"
 
     content_aspect = IssueAspect(
         "content_volume",
@@ -67,6 +72,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
     )
     assert route_card["title"].startswith("루트/선택지 안내와 세이브 편의")
     assert "추천 액션(개선/확장)" in route_card["recommended_action"]
+    assert route_card["evidence_units"][0]["subissue"] == "루트/선택지 안내와 세이브 편의"
+    assert route_card["evidence_units"][0].get("verifier_verdict") is None
 
     story_aspect = IssueAspect(
         "story_logic",
